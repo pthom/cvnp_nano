@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.19)
 project(cvnp_nano LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 14)
 
-function(find_nanobind)
+macro(find_nanobind)
     # From https://nanobind.readthedocs.io/en/latest/building.html
 
     # Shout if the user forgets to set Python_EXECUTABLE
@@ -26,10 +26,10 @@ function(find_nanobind)
         OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_ROOT)
     message(STATUS "nanobind_ROOT: ${nanobind_ROOT}")
     find_package(nanobind CONFIG REQUIRED)
-endfunction()
+endmacro()
 
 
-function(find_opencv)
+macro(find_opencv)
     find_package(OpenCV)
     if (NOT OpenCV_FOUND)
         message(FATAL_ERROR "
@@ -46,12 +46,32 @@ function(find_opencv)
             pip install .
     ")
     endif()
-endfunction()
+endmacro()
 
 find_nanobind()
-#find_opencv()
+find_opencv()
 
+# We need to build nanobind before we can link against it
+nanobind_build_library(nanobind SHARED)
+add_library(cvnp_nano src/cvnp_nano.cpp src/cvnp_nano.h src/cvnp_nano_synonyms.cpp src/cvnp_nano_synonyms.h
+    src/cvnp_nano_synonyms.h)
+target_include_directories(cvnp_nano PUBLIC ${CMAKE_CURRENT_LIST_DIR}/src)
+target_link_libraries(cvnp_nano PUBLIC opencv_core nanobind)
 
-nanobind_add_module(cvnp_nano_example example/cvnp_nano_example.cpp)
-#target_link_libraries(cvnp_nano_example PRIVATE opencv_core)
+if (PROJECT_IS_TOP_LEVEL)
+    # Add the example
+    nanobind_add_module(cvnp_nano_example example/cvnp_nano_example.cpp)
+    target_link_libraries(cvnp_nano_example PRIVATE opencv_core)
 
+    # Add the tests
+    enable_testing()
+
+    find_package(Python REQUIRED COMPONENTS Development)  # Finds the Python interpreter and development files
+    add_executable(test_cvnp_nano tests/test_cvnp_nano.cpp)
+    target_link_libraries(test_cvnp_nano PRIVATE cvnp_nano opencv_core nanobind Python::Python)
+
+#    target_link_libraries(test_cvnp_nano PRIVATE cvnp_nano)
+#    nanobind_compile_options(test_cvnp_nano)
+#    nanobind_link_options(test_cvnp_nano)
+    add_test(NAME test_cvnp_nano COMMAND test_cvnp_nano)
+endif()
