@@ -57,7 +57,7 @@ struct CvNp_TestHelper
     //
     // *Not* shared simple structs (Size, Point2 and Point3)
     //
-    cv::Size s = cv::Size(123, 456);
+    cv::Size_<int> s = cv::Size(123, 456);
     void SetWidth(int w) { s.width = w;}
     void SetHeight(int h) { s.height = h;}
 
