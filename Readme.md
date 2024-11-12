@@ -9,6 +9,9 @@ cvnp_nano provides automatic casts between OpenCV matrices and numpy arrays when
 * Casts *without* shared memory for simple types, between `cv::Size`, `cv::Point`, `cv::Point3`, `cv::Scalar_<Tp>`, `cv::Rect_<Tp>` and python `tuple`
 
 
+> Note: for pybind11, see [cvnp](https://github.com/pthom/cvnp)
+
+
 ## How to use it in your project
 
 1. Add cvnp_nano to your project. For example:
