@@ -3,3 +3,5 @@ vcpkg/
 build*/
 cmake-build-*/
 dist*/
+*.so
+*.pyd

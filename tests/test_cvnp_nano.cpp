@@ -3,7 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <Python.h>
-#include "cvnp_nano.h"
+#include "cvnp_nano/cvnp_nano.h"
 
 #include <opencv2/core/core.hpp>
 

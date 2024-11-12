@@ -1,11 +1,99 @@
-#include "cvnp_nano.h"
-#include "cvnp_nano_synonyms.h"
+#include "cvnp_nano/cvnp_nano.h"
+#include "cvnp_nano/cvnp_nano_synonyms.h"
 #include "opencv2/core.hpp"
 
 namespace cvnp_nano
 {
     namespace detail
     {
+        // #define DEBUG_ALLOCATOR
+
+#ifdef DEBUG_ALLOCATOR
+        int nbAllocations = 0;
+#endif
+
+//        // Translated from cv2_numpy.cpp in OpenCV source code
+//        class CvnpAllocator : public cv::MatAllocator
+//        {
+//        public:
+//            CvnpAllocator() = default;
+//            ~CvnpAllocator() = default;
+//
+//            // Attaches a numpy array object to a cv::Mat
+//            static void attach_nparray(cv::Mat &m, nanobind::ndarray<>& a)
+//            {
+//                static CvnpAllocator instance;
+//
+//                cv::UMatData* u = new cv::UMatData(&instance);
+//                u->data = u->origdata = (uchar*)a.data();
+//                u->size = a.size();
+//                u->userdata = a.inc_ref().ptr();
+//                u->refcount = 1;
+//
+//                // from pybind_imguizmo.cpp:
+//                //                auto r = ndarray_export(
+//                //                    a.handle(), // internal array handle
+//                //                    nb::numpy::value, // framework (i.e numpy, pytorch, etc)
+//                //                    policy,
+//                //                    cleanup);
+//                //nanobind::ndarray_export(a.handle(), nanobind::numpy::value, nanobind::rv_policy::reference, nullptr);
+//
+//                #ifdef DEBUG_ALLOCATOR
+//                ++nbAllocations;
+//                printf("CvnpAllocator::attach_nparray(py::array) nbAllocations=%d\n", nbAllocations);
+//                #endif
+//
+//                m.u = u;
+//                m.allocator = &instance;
+//            }
+//
+//            cv::UMatData* allocate(int dims0, const int* sizes, int type, void* data, size_t* step, cv::AccessFlag flags, cv::UMatUsageFlags usageFlags) const override
+//            {
+//                throw nanobind::value_error("CvnpAllocator::allocate \"standard\" should never happen");
+//                // return stdAllocator->allocate(dims0, sizes, type, data, step, flags, usageFlags);
+//            }
+//
+//            bool allocate(cv::UMatData* u, cv::AccessFlag accessFlags, cv::UMatUsageFlags usageFlags) const override
+//            {
+//                throw nanobind::value_error("CvnpAllocator::allocate \"copy\" should never happen");
+//                // return stdAllocator->allocate(u, accessFlags, usageFlags);
+//            }
+//
+//            void deallocate(cv::UMatData* u) const override
+//            {
+//                if(!u)
+//                {
+//#ifdef DEBUG_ALLOCATOR
+//                    printf("CvnpAllocator::deallocate() with null ptr!!! nbAllocations=%d\n", nbAllocations);
+//#endif
+//                    return;
+//                }
+//
+//                // This function can be called from anywhere, so need the GIL
+//                nanobind::gil_scoped_acquire gil;
+//                assert(u->urefcount >= 0);
+//                assert(u->refcount >= 0);
+//                if(u->refcount == 0)
+//                {
+//                    PyObject* o = (PyObject*)u->userdata;
+//                    Py_XDECREF(o);
+//                    delete u;
+//#ifdef DEBUG_ALLOCATOR
+//                    --nbAllocations;
+//                    printf("CvnpAllocator::deallocate() nbAllocations=%d\n", nbAllocations);
+//#endif
+//                }
+//                else
+//                {
+//#ifdef DEBUG_ALLOCATOR
+//                    printf("CvnpAllocator::deallocate() - not doing anything since urefcount=%d nbAllocations=%d\n",
+//                            u->urefcount,
+//                           nbAllocations);
+//#endif
+//                }
+//            }
+//        };
+
 
         nanobind::dlpack::dtype determine_np_dtype(int cv_depth)
         {
@@ -164,93 +252,3 @@ namespace cvnp_nano
     }
 
 }
-
-
-//        // #define DEBUG_ALLOCATOR
-//
-//#ifdef DEBUG_ALLOCATOR
-//        int nbAllocations = 0;
-//#endif
-//
-//        // Translated from cv2_numpy.cpp in OpenCV source code
-//        class CvnpAllocator : public cv::MatAllocator
-//        {
-//        public:
-//            CvnpAllocator() = default;
-//            ~CvnpAllocator() = default;
-//
-//            // Attaches a numpy array object to a cv::Mat
-//            static void attach_nparray(cv::Mat &m, nanobind::ndarray<>& a)
-//            {
-//                static CvnpAllocator instance;
-//
-//                cv::UMatData* u = new cv::UMatData(&instance);
-//                u->data = u->origdata = (uchar*)a.mutable_data(0);
-//                u->size = a.size();
-//                u->userdata = a.inc_ref().ptr();
-//                u->refcount = 1;
-//
-//                // from pybind_imguizmo.cpp:
-//                //                auto r = ndarray_export(
-//                //                    a.handle(), // internal array handle
-//                //                    nb::numpy::value, // framework (i.e numpy, pytorch, etc)
-//                //                    policy,
-//                //                    cleanup);
-//                //nanobind::ndarray_export(a.handle(), nanobind::numpy::value, nanobind::rv_policy::reference, nullptr);
-//
-//
-//#ifdef DEBUG_ALLOCATOR
-//                ++nbAllocations;
-//                printf("CvnpAllocator::attach_nparray(py::array) nbAllocations=%d\n", nbAllocations);
-//#endif
-//
-//                m.u = u;
-//                m.allocator = &instance;
-//            }
-//
-//            cv::UMatData* allocate(int dims0, const int* sizes, int type, void* data, size_t* step, cv::AccessFlag flags, cv::UMatUsageFlags usageFlags) const override
-//            {
-//                throw py::value_error("CvnpAllocator::allocate \"standard\" should never happen");
-//                // return stdAllocator->allocate(dims0, sizes, type, data, step, flags, usageFlags);
-//            }
-//
-//            bool allocate(cv::UMatData* u, cv::AccessFlag accessFlags, cv::UMatUsageFlags usageFlags) const override
-//            {
-//                throw py::value_error("CvnpAllocator::allocate \"copy\" should never happen");
-//                // return stdAllocator->allocate(u, accessFlags, usageFlags);
-//            }
-//
-//            void deallocate(cv::UMatData* u) const override
-//            {
-//                if(!u)
-//                {
-//#ifdef DEBUG_ALLOCATOR
-//                    printf("CvnpAllocator::deallocate() with null ptr!!! nbAllocations=%d\n", nbAllocations);
-//#endif
-//                    return;
-//                }
-//
-//                // This function can be called from anywhere, so need the GIL
-//                py::gil_scoped_acquire gil;
-//                assert(u->urefcount >= 0);
-//                assert(u->refcount >= 0);
-//                if(u->refcount == 0)
-//                {
-//                    PyObject* o = (PyObject*)u->userdata;
-//                    Py_XDECREF(o);
-//                    delete u;
-//#ifdef DEBUG_ALLOCATOR
-//                    --nbAllocations;
-//                    printf("CvnpAllocator::deallocate() nbAllocations=%d\n", nbAllocations);
-//#endif
-//                }
-//                else
-//                {
-//#ifdef DEBUG_ALLOCATOR
-//                    printf("CvnpAllocator::deallocate() - not doing anything since urefcount=%d nbAllocations=%d\n",
-//                            u->urefcount,
-//                           nbAllocations);
-//#endif
-//                }
-//            }
-//        };
