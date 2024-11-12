@@ -493,23 +493,24 @@ def test_matx_roundtrip():
 
 
 def main():
-    test_mat_shared()
-    test_mat__shared()
-    test_matx_not_shared()
-    test_vec_not_shared()
-    test_size()
-    test_point()
-    test_cvnp_round_trip()
-    test_short_lived_matx()
-    test_short_lived_mat()
-    test_empty_mat()
+    # test_mat_shared()
+    # test_mat__shared()
+    # test_matx_not_shared()
+    # test_vec_not_shared()
+    # test_size()
+    # test_point()
+    # test_cvnp_round_trip()
+    # test_short_lived_mat()
+    # test_empty_mat()
+    #
+    # test_additional_ref()
+    # test_sub_matrices()
+    # test_scalar()
+    # test_rect()
+    # test_contiguous_check()
 
-    test_additional_ref()
-    test_sub_matrices()
-    test_scalar()
-    test_rect()
-    test_contiguous_check()
-    test_matx_roundtrip()
+    test_short_lived_matx()
+    # test_matx_roundtrip()
 
 
 if __name__ == "__main__":

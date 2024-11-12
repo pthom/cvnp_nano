@@ -16,8 +16,8 @@ namespace cvnp_nano
     }
 }
 
-//#define DEBUG_CVNP(x) std::cout << "DEBUG_CVNP: " << x << std::endl;
-#define DEBUG_CVNP(x)
+#define DEBUG_CVNP(x) std::cout << "DEBUG_CVNP: " << x << std::endl;
+//#define DEBUG_CVNP(x)
 
 
 NAMESPACE_BEGIN(NB_NAMESPACE)
@@ -234,7 +234,6 @@ struct type_caster<T, enable_if_t<is_vec_or_matx<T>::value>>
     static constexpr int rows = T::rows; // number of rows
     static constexpr int cols = T::cols; // number of columns (cn)
     static constexpr bool is_matx = std::is_same_v<T, cv::Matx<typename T::value_type, T::rows, T::cols>>;
-    static constexpr size_t ndim = is_matx ? 2 : 1; // number of dimensions
 
     // Define ndarray
     using ndarray_shape = std::conditional_t<is_matx, shape<rows, cols>, shape<rows>>;
@@ -245,6 +244,7 @@ struct type_caster<T, enable_if_t<is_vec_or_matx<T>::value>>
 
     bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept
     {
+        DEBUG_CVNP("Enter from_python Type caster for vec_or_matx");
         // Check if src is ndarray
         NDArrayCaster caster;
         bool is_valid_ndarray = caster.from_python(src, flags, cleanup);
@@ -256,55 +256,99 @@ struct type_caster<T, enable_if_t<is_vec_or_matx<T>::value>>
         // Convert ndarray to cv::Vec or cv::Matx
         const NDArray &array = caster.value;
         memcpy(value.val, array.data(), rows * cols * sizeof(_Tp));
-
+        DEBUG_CVNP("Leave from_python Type caster for vec_or_matx");
         return true;
     }
 
     static handle from_cpp(const T &matx, rv_policy policy, cleanup_list *cleanup) noexcept
     {
+        constexpr int ndim = is_matx ? 2 : 1;
+        DEBUG_CVNP("Enter from_cpp Type caster for vec_or_matx with ndim=" << ndim);
+
         size_t shape[ndim];
-
-        if constexpr (is_matx)
-        {
-            shape[0] = (size_t)rows;
-            shape[1] = (size_t)cols;
-        }
-        else
-        {
-            shape[0] = (size_t)rows;
+        if constexpr (is_matx) {
+            shape[0] = rows;
+            shape[1] = cols;
+            DEBUG_CVNP("  Matx shape (2D): " << shape[0] << " x " << shape[1]);
+        } else {
+            shape[0] = rows;
+            DEBUG_CVNP("  Vec shape (1D): " << shape[0]);
         }
 
-        void *ptr = (void *)matx.val;
+        size_t total_elements = rows * cols;
+        _Tp* matx_data = nullptr;
+        nanobind::handle data_owner;
 
-        switch (policy)
-        {
-            case rv_policy::automatic:
-                policy = rv_policy::copy;
+        // Set default policies if automatic
+        if (policy == rv_policy::automatic)
+            policy = rv_policy::copy;
+        else if (policy == rv_policy::automatic_reference)
+            policy = rv_policy::reference;
+
+        // Handle ownership and memory management based on the policy
+        switch (policy) {
+            case rv_policy::copy:
+            case rv_policy::move: {
+                DEBUG_CVNP("  policy=copy or move => making copy of matx data");
+                matx_data = new _Tp[total_elements];
+                std::memcpy(matx_data, matx.val, total_elements * sizeof(_Tp));
+
+                // Create capsule to manage memory, delete when no longer needed
+                data_owner = nanobind::capsule(matx_data, [](void *p) noexcept { delete[] static_cast<_Tp*>(p); });
                 break;
+            }
+            case rv_policy::take_ownership: {
+                DEBUG_CVNP("  policy=take_ownership => taking ownership of matx data");
+                matx_data = new _Tp[total_elements];
+                std::memcpy(matx_data, matx.val, total_elements * sizeof(_Tp));
 
-            case rv_policy::automatic_reference:
-                policy = rv_policy::reference;
+                // Transfer ownership to the capsule
+                data_owner = nanobind::capsule(matx_data, [](void *p) noexcept { delete[] static_cast<_Tp*>(p); });
                 break;
+            }
+            case rv_policy::reference:
+            case rv_policy::reference_internal: {
+                DEBUG_CVNP("  policy=reference or reference_internal => using existing matx data");
+                matx_data = const_cast<_Tp*>(matx.val);  // Cast away const if `_Tp` is const
 
-            default: // leave policy unchanged
+                // No owner, as we're referencing existing data
+                data_owner = nanobind::handle();
                 break;
+            }
+            default: {
+                DEBUG_CVNP("  Unsupported policy => throwing exception");
+                PyErr_WarnFormat(PyExc_Warning, 1, "cvnp_nano: Unsupported rv_policy for vec_or_matx type caster: policy=%i", policy);
+                return {};  // Early return for unsupported policy
+            }
         }
 
-        object owner;
-        if (policy == rv_policy::move)
-        {
-            T *temp = new T(std::move(matx));
-            owner = capsule(temp, [](void *p) noexcept
-            { delete (T *)p; });
-            ptr = temp->val;
+        DEBUG_CVNP("Attempting ndarray creation with:"
+                       << "\n  ndim=" << ndim
+                       << "\n  shape[0]=" << shape[0]
+                       << (ndim == 2 ? "\n  shape[1]=" + std::to_string(shape[1]) : "")
+                       << "\n  matx_data pointer=" << static_cast<void*>(matx_data)
+                       << "\n  data_owner valid=" << data_owner.is_valid());
+
+        // Set dtype explicitly
+        dlpack::dtype dtype = nanobind::dtype<_Tp>();
+        ndarray<> a(matx_data, ndim, shape, data_owner, nullptr, dtype);
+
+        if (a.ndim() != ndim) {
+            DEBUG_CVNP("Error: Mismatch in ndarray dimension. Expected " << ndim << ", got " << a.ndim());
+            return {};  // Early return to prevent further issues
         }
 
-        rv_policy array_rv_policy = policy == rv_policy::move ? rv_policy::reference : policy;
+        auto r = ndarray_export(
+            a.handle(),
+            nanobind::numpy::value,
+            policy,
+            cleanup
+        );
 
-        // Convert cv::Vec or cv::Matx to ndarray
-        object o = steal(NDArrayCaster::from_cpp(NDArray(ptr, ndim, shape), policy, cleanup));
-        return o.release();
+        DEBUG_CVNP("Leave from_cpp Type caster for vec_or_matx");
+        return r;
     }
+
 };
 
 
