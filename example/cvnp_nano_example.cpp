@@ -1,4 +1,5 @@
 #include <nanobind/nanobind.h>
+#include <nanobind/stl/vector.h>
 #include "cvnp_nano/cvnp_nano.h"
 #include <opencv2/opencv.hpp>
 
@@ -208,4 +209,5 @@ NB_MODULE(cvnp_nano_example, m)
     m.def("short_lived_mat", ShortLivedMat);
     m.def("RoundTripMatx21d", RoundTripMatx21d);
 
+    m.def("print_types_synonyms", cvnp_nano::print_types_synonyms);
 }

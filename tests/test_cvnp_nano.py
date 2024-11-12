@@ -120,7 +120,7 @@ def test_mat__shared():
     assert(o.m_double[2, 1] == 4.5)
 
 
-def test_matx_not_shared():
+def test_matx_shared():
     """
     We are playing with these elements
         struct CvNp_TestHelper {
@@ -169,7 +169,7 @@ def test_matx_not_shared():
         o.mx_ns = new_mat
 
 
-def test_vec_not_shared():
+def test_vec_shared():
     """
     We are playing with these elements
         cv::Vec3f v3_ns = {1.f, 2.f, 3.f};
@@ -493,25 +493,28 @@ def test_matx_roundtrip():
 
 
 def main():
-    # test_mat_shared()
-    # test_mat__shared()
-    # test_matx_not_shared()
-    # test_vec_not_shared()
-    # test_size()
-    # test_point()
-    # test_cvnp_round_trip()
-    # test_short_lived_mat()
-    # test_empty_mat()
-    #
-    # test_additional_ref()
-    # test_sub_matrices()
-    # test_scalar()
-    # test_rect()
-    # test_contiguous_check()
+    test_mat_shared()
+    test_mat__shared()
+    test_matx_shared()
+    test_vec_shared()
+    test_size()
+    test_point()
+    test_cvnp_round_trip()
+    test_short_lived_mat()
+    test_empty_mat()
+
+    test_additional_ref()
+    test_sub_matrices()
+    test_scalar()
+    test_rect()
+    test_contiguous_check()
 
     test_short_lived_matx()
-    # test_matx_roundtrip()
+    test_matx_roundtrip()
 
+    from cvnp_nano_example import print_types_synonyms  # noqa
+    print("List of types synonyms:")
+    print_types_synonyms()
 
 if __name__ == "__main__":
      main()

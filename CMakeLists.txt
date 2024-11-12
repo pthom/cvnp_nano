@@ -53,10 +53,10 @@ find_opencv()
 
 # We need to build nanobind before we can link against it
 nanobind_build_library(nanobind SHARED)
-add_library(cvnp_nano cvnp_nano/cvnp_nano.cpp cvnp_nano/cvnp_nano.h cvnp_nano/cvnp_nano_synonyms.cpp cvnp_nano/cvnp_nano_synonyms.h
-    cvnp_nano/cvnp_nano_synonyms.h)
+add_library(cvnp_nano cvnp_nano/cvnp_nano.cpp cvnp_nano/cvnp_nano.h)
 target_include_directories(cvnp_nano PUBLIC ${CMAKE_CURRENT_LIST_DIR})
 target_link_libraries(cvnp_nano PUBLIC opencv_core nanobind)
+
 
 if (PROJECT_IS_TOP_LEVEL)
     # Add the example
@@ -67,16 +67,4 @@ if (PROJECT_IS_TOP_LEVEL)
         TARGET cvnp_nano_example POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:cvnp_nano_example> ${CMAKE_CURRENT_LIST_DIR}
     )
-
-    # Add the tests
-    enable_testing()
-
-    find_package(Python REQUIRED COMPONENTS Development)  # Finds the Python interpreter and development files
-    add_executable(test_cvnp_nano tests/test_cvnp_nano.cpp)
-    target_link_libraries(test_cvnp_nano PRIVATE cvnp_nano opencv_core nanobind Python::Python)
-
-#    target_link_libraries(test_cvnp_nano PRIVATE cvnp_nano)
-#    nanobind_compile_options(test_cvnp_nano)
-#    nanobind_link_options(test_cvnp_nano)
-    add_test(NAME test_cvnp_nano COMMAND test_cvnp_nano)
 endif()

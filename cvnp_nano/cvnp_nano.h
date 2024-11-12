@@ -14,10 +14,25 @@ namespace cvnp_nano
         cv::Mat mat = nparray_to_mat(a, owner);
         return mat;  // Convert to Mat_<_Tp>
     }
+
+    struct TypeSynonyms
+    {
+        int         cv_depth = -1;
+        std::string cv_depth_name;
+        std::string scalar_typename_;
+        nanobind::dlpack::dtype dtype;
+
+        std::string str() const;
+    };
+
+    extern std::vector<TypeSynonyms> sTypeSynonyms;
+
+    std::vector<TypeSynonyms> list_types_synonyms();
+    void                      print_types_synonyms();
 }
 
-#define DEBUG_CVNP(x) std::cout << "DEBUG_CVNP: " << x << std::endl;
-//#define DEBUG_CVNP(x)
+//#define DEBUG_CVNP(x) std::cout << "DEBUG_CVNP: " << x << std::endl;
+#define DEBUG_CVNP(x)
 
 
 NAMESPACE_BEGIN(NB_NAMESPACE)
@@ -277,7 +292,7 @@ struct type_caster<T, enable_if_t<is_vec_or_matx<T>::value>>
 
         size_t total_elements = rows * cols;
         _Tp* matx_data = nullptr;
-        nanobind::handle data_owner;
+        nanobind::object data_owner;  // Change from handle to object
 
         // Set default policies if automatic
         if (policy == rv_policy::automatic)
@@ -285,7 +300,7 @@ struct type_caster<T, enable_if_t<is_vec_or_matx<T>::value>>
         else if (policy == rv_policy::automatic_reference)
             policy = rv_policy::reference;
 
-        // Handle ownership and memory management based on the policy
+        // Handle each policy case
         switch (policy) {
             case rv_policy::copy:
             case rv_policy::move: {
@@ -293,51 +308,58 @@ struct type_caster<T, enable_if_t<is_vec_or_matx<T>::value>>
                 matx_data = new _Tp[total_elements];
                 std::memcpy(matx_data, matx.val, total_elements * sizeof(_Tp));
 
-                // Create capsule to manage memory, delete when no longer needed
-                data_owner = nanobind::capsule(matx_data, [](void *p) noexcept { delete[] static_cast<_Tp*>(p); });
+                // Create capsule as a nanobind::object to manage reference counting
+                data_owner = nanobind::capsule(matx_data, [](void *p) noexcept {
+                    delete[] static_cast<_Tp*>(p);
+                });
                 break;
             }
             case rv_policy::take_ownership: {
-                DEBUG_CVNP("  policy=take_ownership => taking ownership of matx data");
+                DEBUG_CVNP("  policy=take_ownership => transferring ownership of matx data");
                 matx_data = new _Tp[total_elements];
                 std::memcpy(matx_data, matx.val, total_elements * sizeof(_Tp));
 
-                // Transfer ownership to the capsule
-                data_owner = nanobind::capsule(matx_data, [](void *p) noexcept { delete[] static_cast<_Tp*>(p); });
+                data_owner = nanobind::capsule(matx_data, [](void *p) noexcept {
+                    delete[] static_cast<_Tp*>(p);
+                });
                 break;
             }
             case rv_policy::reference:
             case rv_policy::reference_internal: {
                 DEBUG_CVNP("  policy=reference or reference_internal => using existing matx data");
-                matx_data = const_cast<_Tp*>(matx.val);  // Cast away const if `_Tp` is const
+                matx_data = const_cast<_Tp*>(matx.val);
 
-                // No owner, as we're referencing existing data
-                data_owner = nanobind::handle();
+                // No need for data_owner in reference policies
+                data_owner = nanobind::object();  // Empty object
                 break;
             }
             default: {
-                DEBUG_CVNP("  Unsupported policy => throwing exception");
-                PyErr_WarnFormat(PyExc_Warning, 1, "cvnp_nano: Unsupported rv_policy for vec_or_matx type caster: policy=%i", policy);
-                return {};  // Early return for unsupported policy
+                DEBUG_CVNP("  Unsupported policy => raising exception");
+                PyErr_WarnFormat(PyExc_Warning, 1,
+                                 "cvnp_nano: Unsupported rv_policy for vec_or_matx type caster: policy=%i",
+                                 static_cast<int>(policy));
+                return {};
             }
         }
 
-        DEBUG_CVNP("Attempting ndarray creation with:"
-                       << "\n  ndim=" << ndim
-                       << "\n  shape[0]=" << shape[0]
-                       << (ndim == 2 ? "\n  shape[1]=" + std::to_string(shape[1]) : "")
-                       << "\n  matx_data pointer=" << static_cast<void*>(matx_data)
-                       << "\n  data_owner valid=" << data_owner.is_valid());
-
-        // Set dtype explicitly
+        // Set dtype explicitly and initialize ndarray
         dlpack::dtype dtype = nanobind::dtype<_Tp>();
+
+        // Create ndarray and verify properties
         ndarray<> a(matx_data, ndim, shape, data_owner, nullptr, dtype);
 
         if (a.ndim() != ndim) {
             DEBUG_CVNP("Error: Mismatch in ndarray dimension. Expected " << ndim << ", got " << a.ndim());
             return {};  // Early return to prevent further issues
         }
+        for (int i = 0; i < ndim; ++i) {
+            if (shape[i] != a.shape(i)) {
+                DEBUG_CVNP("Error: Mismatch in shape dimension " << i << ". Expected " << shape[i] << ", got " << a.shape(i));
+                return {};  // Early return if shape mismatch
+            }
+        }
 
+        // Export the ndarray and return
         auto r = ndarray_export(
             a.handle(),
             nanobind::numpy::value,
@@ -350,7 +372,6 @@ struct type_caster<T, enable_if_t<is_vec_or_matx<T>::value>>
     }
 
 };
-
 
 
 template<typename _Tp>
