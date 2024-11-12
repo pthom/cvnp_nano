@@ -6,93 +6,92 @@ namespace cvnp_nano
 {
     namespace detail
     {
-        // #define DEBUG_ALLOCATOR
+        #define DEBUG_ALLOCATOR
 
 #ifdef DEBUG_ALLOCATOR
         int nbAllocations = 0;
 #endif
 
-//        // Translated from cv2_numpy.cpp in OpenCV source code
-//        class CvnpAllocator : public cv::MatAllocator
-//        {
-//        public:
-//            CvnpAllocator() = default;
-//            ~CvnpAllocator() = default;
-//
-//            // Attaches a numpy array object to a cv::Mat
-//            static void attach_nparray(cv::Mat &m, nanobind::ndarray<>& a)
-//            {
-//                static CvnpAllocator instance;
-//
-//                cv::UMatData* u = new cv::UMatData(&instance);
-//                u->data = u->origdata = (uchar*)a.data();
-//                u->size = a.size();
-//                u->userdata = a.inc_ref().ptr();
-//                u->refcount = 1;
-//
-//                // from pybind_imguizmo.cpp:
-//                //                auto r = ndarray_export(
-//                //                    a.handle(), // internal array handle
-//                //                    nb::numpy::value, // framework (i.e numpy, pytorch, etc)
-//                //                    policy,
-//                //                    cleanup);
-//                //nanobind::ndarray_export(a.handle(), nanobind::numpy::value, nanobind::rv_policy::reference, nullptr);
-//
-//                #ifdef DEBUG_ALLOCATOR
-//                ++nbAllocations;
-//                printf("CvnpAllocator::attach_nparray(py::array) nbAllocations=%d\n", nbAllocations);
-//                #endif
-//
-//                m.u = u;
-//                m.allocator = &instance;
-//            }
-//
-//            cv::UMatData* allocate(int dims0, const int* sizes, int type, void* data, size_t* step, cv::AccessFlag flags, cv::UMatUsageFlags usageFlags) const override
-//            {
-//                throw nanobind::value_error("CvnpAllocator::allocate \"standard\" should never happen");
-//                // return stdAllocator->allocate(dims0, sizes, type, data, step, flags, usageFlags);
-//            }
-//
-//            bool allocate(cv::UMatData* u, cv::AccessFlag accessFlags, cv::UMatUsageFlags usageFlags) const override
-//            {
-//                throw nanobind::value_error("CvnpAllocator::allocate \"copy\" should never happen");
-//                // return stdAllocator->allocate(u, accessFlags, usageFlags);
-//            }
-//
-//            void deallocate(cv::UMatData* u) const override
-//            {
-//                if(!u)
-//                {
-//#ifdef DEBUG_ALLOCATOR
-//                    printf("CvnpAllocator::deallocate() with null ptr!!! nbAllocations=%d\n", nbAllocations);
-//#endif
-//                    return;
-//                }
-//
-//                // This function can be called from anywhere, so need the GIL
-//                nanobind::gil_scoped_acquire gil;
-//                assert(u->urefcount >= 0);
-//                assert(u->refcount >= 0);
-//                if(u->refcount == 0)
-//                {
-//                    PyObject* o = (PyObject*)u->userdata;
-//                    Py_XDECREF(o);
-//                    delete u;
-//#ifdef DEBUG_ALLOCATOR
-//                    --nbAllocations;
-//                    printf("CvnpAllocator::deallocate() nbAllocations=%d\n", nbAllocations);
-//#endif
-//                }
-//                else
-//                {
-//#ifdef DEBUG_ALLOCATOR
-//                    printf("CvnpAllocator::deallocate() - not doing anything since urefcount=%d nbAllocations=%d\n",
-//                            u->urefcount,
-//                           nbAllocations);
-//#endif
-//                }
-//            }
-//        };
+        // Translated from cv2_numpy.cpp in OpenCV source code
+        // A custom allocator for cv::Mat that attaches an owner to the cv::Mat
+        class CvnpAllocator : public cv::MatAllocator
+        {
+        public:
+            CvnpAllocator() = default;
+            ~CvnpAllocator() = default;
+
+            // Attaches an owner to a cv::Mat
+            static void attach_nparray(cv::Mat &m, nanobind::handle owner)
+            {
+                static CvnpAllocator instance;
+
+                // Ensure no existing custom allocator to avoid accidental double attachment
+                if (m.u && m.allocator) {
+                    throw std::logic_error("attach_nparray: cv::Mat already has a custom allocator attached");
+                }
+
+                cv::UMatData* u = new cv::UMatData(&instance);
+                u->data = u->origdata = (uchar*)m.data;
+                u->size = m.total();
+
+                u->userdata = &owner;
+                u->refcount = 1;
+
+                #ifdef DEBUG_ALLOCATOR
+                ++nbAllocations;
+                printf("CvnpAllocator::attach_nparray(py::array) nbAllocations=%d\n", nbAllocations);
+                #endif
+
+                m.u = u;
+                m.allocator = &instance;
+            }
+
+            cv::UMatData* allocate(int dims0, const int* sizes, int type, void* data, size_t* step, cv::AccessFlag flags, cv::UMatUsageFlags usageFlags) const override
+            {
+                throw nanobind::value_error("CvnpAllocator::allocate \"standard\" should never happen");
+                // return stdAllocator->allocate(dims0, sizes, type, data, step, flags, usageFlags);
+            }
+
+            bool allocate(cv::UMatData* u, cv::AccessFlag accessFlags, cv::UMatUsageFlags usageFlags) const override
+            {
+                throw nanobind::value_error("CvnpAllocator::allocate \"copy\" should never happen");
+                // return stdAllocator->allocate(u, accessFlags, usageFlags);
+            }
+
+            void deallocate(cv::UMatData* u) const override
+            {
+                if(!u)
+                {
+#ifdef DEBUG_ALLOCATOR
+                    printf("CvnpAllocator::deallocate() with null ptr!!! nbAllocations=%d\n", nbAllocations);
+#endif
+                    return;
+                }
+
+                // This function can be called from anywhere, so need the GIL
+                nanobind::gil_scoped_acquire gil;
+                assert(u->urefcount >= 0);
+                assert(u->refcount >= 0);
+                if(u->refcount == 0)
+                {
+                    PyObject* o = (PyObject*)u->userdata;
+                    Py_XDECREF(o);
+                    delete u;
+#ifdef DEBUG_ALLOCATOR
+                    --nbAllocations;
+                    printf("CvnpAllocator::deallocate() nbAllocations=%d\n", nbAllocations);
+#endif
+                }
+                else
+                {
+#ifdef DEBUG_ALLOCATOR
+                    printf("CvnpAllocator::deallocate() - not doing anything since urefcount=%d nbAllocations=%d\n",
+                            u->urefcount,
+                           nbAllocations);
+#endif
+                }
+            }
+        };
 
 
         nanobind::dlpack::dtype determine_np_dtype(int cv_depth)
@@ -170,19 +169,6 @@ namespace cvnp_nano
         {
             return m.channels() == 1 ? 2 : 3;
         }
-
-        // Note on Capsules: capsule are python objects that can own a pointer and a destructor
-        //  make_capsule_mat:
-        //      creates a capsule that owns a cv::Mat (that points to the same data (we want to increase the ref count of the cv::Mat))
-        //  delete_mat_inside_capsule:
-        //      will delete this mat when the capsule is deleted (and the ref count will be decreased)
-
-        void delete_mat_inside_capsule(void *matPtr) noexcept
-        {
-            printf("delete_mat_inside_capsule\n");
-            delete reinterpret_cast<cv::Mat*>(matPtr);
-        }
-
     } // namespace detail
 
 
@@ -222,7 +208,7 @@ namespace cvnp_nano
     }
 
 
-    cv::Mat nparray_to_mat(nanobind::ndarray<>& a)
+    cv::Mat nparray_to_mat(nanobind::ndarray<>& a, nanobind::handle owner)
     {
         // note: empty arrays are not contiguous, but that's fine. Just
         //       make sure to not access mutable_data
@@ -237,9 +223,8 @@ namespace cvnp_nano
         cv::Size size = detail::determine_cv_size(a);
         cv::Mat m(size, type, is_not_empty ? a.data() : nullptr);
 
-//        if (is_not_empty) {
-//            detail::CvnpAllocator::attach_nparray(m, a); //, ndims, size, type, step);
-//        }
+        if (is_not_empty)
+            detail::CvnpAllocator::attach_nparray(m, owner);
 
         return m;
     }

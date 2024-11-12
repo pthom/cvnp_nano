@@ -7,7 +7,13 @@
 namespace cvnp_nano
 {
     nanobind::ndarray<> mat_to_nparray(const cv::Mat &m, nanobind::handle owner);
-    cv::Mat nparray_to_mat(nanobind::ndarray<> &a);
+    cv::Mat nparray_to_mat(nanobind::ndarray<> &a, nanobind::handle owner);
+
+    template <typename _Tp>
+    cv::Mat_<_Tp> nparray_to_mat_typed(nanobind::ndarray<> &a, nanobind::handle owner) {
+        cv::Mat mat = nparray_to_mat(a, owner);
+        return mat;  // Convert to Mat_<_Tp>
+    }
 }
 
 #define DEBUG_CVNP(x) std::cout << "DEBUG_CVNP: " << x << std::endl;
@@ -17,7 +23,9 @@ namespace cvnp_nano
 NAMESPACE_BEGIN(NB_NAMESPACE)
 NAMESPACE_BEGIN(detail)
 
+//
 // Type caster for cv::Mat
+// ========================
 template <>
 struct type_caster<cv::Mat>
 {
@@ -34,7 +42,15 @@ struct type_caster<cv::Mat>
         try
         {
             auto a = nanobind::cast<ndarray<>>(src);
-            this->value = cvnp_nano::nparray_to_mat(a);
+
+            // Create a capsule that keeps the Python ndarray alive as long as cv::Mat needs it
+            nanobind::object capsule_owner = nanobind::capsule(src.ptr(), [](void* p) noexcept {
+                Py_XDECREF(reinterpret_cast<PyObject*>(p));  // Decrement reference count of ndarray when capsule is destroyed
+            });
+            Py_INCREF(src.ptr());  // Increment reference to ensure ndarray is not prematurely garbage collected
+
+
+            this->value = cvnp_nano::nparray_to_mat(a, capsule_owner);
             DEBUG_CVNP("Leave from_python Type caster for cv::Mat");
             return true;
         }
@@ -135,6 +151,73 @@ struct type_caster<cv::Mat>
         }
     }
 };
+
+
+//
+// Type caster for cv::Mat_<_Tp>  (reuses cv::Mat caster)
+// =======================================================
+template <typename _Tp>
+struct type_caster<cv::Mat_<_Tp>> : public type_caster<cv::Mat> // Inherit from cv::Mat caster
+{
+    // Adjust type_caster for Mat_<_Tp> to handle _Tp and ensure correct dtype
+    NB_TYPE_CASTER(cv::Mat_<_Tp>, const_name("cv::Mat_<Tp> <=> np.array"))
+
+    bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept
+    {
+        DEBUG_CVNP("Enter from_python Type caster for cv::Mat_<_Tp>");
+
+        if (!isinstance<ndarray<>>(src))
+        {
+            PyErr_WarnFormat(PyExc_Warning, 1, "cvnp_nano: cv::Mat_<_Tp> type_caster from_python: expected a numpy.ndarray");
+            return false;
+        }
+
+        try
+        {
+            auto a = nanobind::cast<ndarray<>>(src);
+
+            // Check if the dtype of ndarray matches _Tp
+            if (a.dtype() != nanobind::dtype<_Tp>()) {
+                PyErr_WarnFormat(PyExc_Warning, 1, "cvnp_nano: dtype of ndarray does not match cv::Mat_<_Tp> type");
+                return false;
+            }
+
+            // Create a capsule that keeps the Python ndarray alive as long as cv::Mat_<_Tp> needs it
+            nanobind::object capsule_owner = nanobind::capsule(src.ptr(), [](void* p) noexcept {
+                Py_XDECREF(reinterpret_cast<PyObject*>(p));
+            });
+            Py_INCREF(src.ptr());
+
+            // Use nparray_to_mat_typed to convert ndarray to cv::Mat_<_Tp>
+            this->value = cvnp_nano::nparray_to_mat_typed<_Tp>(a, capsule_owner);
+
+            DEBUG_CVNP("Leave from_python Type caster for cv::Mat_<_Tp>");
+            return true;
+        }
+        catch (const std::exception& e)
+        {
+            PyErr_WarnFormat(PyExc_Warning, 1, "cvnp_nano: cv::Mat_<_Tp> type_caster from_python, exception: %s", e.what());
+            return false;
+        }
+    }
+
+    static handle from_cpp(const cv::Mat_<_Tp> &mat, rv_policy policy, cleanup_list *cleanup) noexcept
+    {
+        DEBUG_CVNP("Enter from_cpp Type caster for cv::Mat_<_Tp>");
+
+        try
+        {
+            // Call the base cv::Mat type_caster's from_cpp method
+            return type_caster<cv::Mat>::from_cpp(mat, policy, cleanup);
+        }
+        catch (const std::exception& e)
+        {
+            PyErr_WarnFormat(PyExc_Warning, 1, "cvnp_nano: cv::Mat_<_Tp> type_caster from_cpp, exception: %s", e.what());
+            return {};
+        }
+    }
+};
+
 
 NAMESPACE_END(detail)
 NAMESPACE_END(NB_NAMESPACE)
