@@ -183,23 +183,16 @@ namespace cvnp_nano
             delete reinterpret_cast<cv::Mat*>(matPtr);
         }
 
-        nanobind::capsule make_capsule_mat(const cv::Mat& m)
-        {
-            printf("make_capsule_mat\n");
-            cv::Mat* new_mat_ptr = new cv::Mat(m);
-            return nanobind::capsule(new_mat_ptr, "cvnp_nano::make_capsule_mat", delete_mat_inside_capsule);
-        }
     } // namespace detail
 
 
-    nanobind::ndarray<> mat_to_nparray(const cv::Mat &m)
+    nanobind::ndarray<> mat_to_nparray(const cv::Mat &m, nanobind::handle owner)
     {
         void *data = static_cast<void *>(m.data);
         size_t ndim = detail::determine_ndim(m);
         std::vector<size_t> shape = detail::determine_shape(m);
         std::vector<int64_t> strides = detail::determine_strides(m);
         nanobind::dlpack::dtype dtype = detail::determine_np_dtype(m.depth());
-        nanobind::capsule owner = detail::make_capsule_mat(m);  // Properly owns a persistent cv::Mat
 
         auto a = nanobind::ndarray<>(
             data,

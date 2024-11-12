@@ -206,10 +206,10 @@ void test_mat()
 {
     cv::Mat m = cv::Mat::eye(cv::Size(3, 3), CV_32FC3);
 
-    auto a = cvnp_nano::mat_to_nparray(m);
-    auto m2 = cvnp_nano::nparray_to_mat(a);
+//    auto a = cvnp_nano::mat_to_nparray(m, n);
+//    auto m2 = cvnp_nano::nparray_to_mat(a);
 
-    display_mat("m2", m2);
+//    display_mat("m2", m2);
 }
 
 
