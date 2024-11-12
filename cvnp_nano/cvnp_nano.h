@@ -16,8 +16,8 @@ namespace cvnp_nano
     }
 }
 
-#define DEBUG_CVNP(x) std::cout << "DEBUG_CVNP: " << x << std::endl;
-//#define DEBUG_CVNP(x)
+//#define DEBUG_CVNP(x) std::cout << "DEBUG_CVNP: " << x << std::endl;
+#define DEBUG_CVNP(x)
 
 
 NAMESPACE_BEGIN(NB_NAMESPACE)
@@ -319,6 +319,7 @@ struct type_caster<cv::Size_<_Tp>>
     // Conversion part 1 (Python -> C++, i.e., tuple -> cv::Size_)
     bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept
     {
+        DEBUG_CVNP("Enter from_python Type caster for cv::Size_");
         if (!nanobind::isinstance<nanobind::tuple>(src))
             return false;
 
@@ -333,6 +334,7 @@ struct type_caster<cv::Size_<_Tp>>
             _Tp width = nanobind::cast<_Tp>(tuple[0]);
             _Tp height = nanobind::cast<_Tp>(tuple[1]);
             value = SizeTp(width, height);
+            DEBUG_CVNP("Leave from_python Type caster for cv::Size_");
             return true;
         }
         catch (const std::exception& e) {
@@ -344,7 +346,202 @@ struct type_caster<cv::Size_<_Tp>>
     // Conversion part 2 (C++ -> Python, i.e., cv::Size_ -> tuple)
     static handle from_cpp(const SizeTp &value, rv_policy policy, cleanup_list *cleanup) noexcept
     {
-        return nanobind::make_tuple(value.width, value.height).release();
+        DEBUG_CVNP("Enter from_cpp Type caster for cv::Size_");
+        auto r = nanobind::make_tuple(value.width, value.height).release();
+        DEBUG_CVNP("Leave from_cpp Type caster for cv::Size_");
+        return r;
+    }
+};
+
+
+template<typename _Tp>
+struct type_caster<cv::Point_<_Tp>>
+{
+    using PointTp = cv::Point_<_Tp>;
+
+    NB_TYPE_CASTER(PointTp, const_name("tuple"));
+
+    // Conversion part 1 (Python -> C++, i.e., tuple -> cv::Size_)
+    bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept
+    {
+        DEBUG_CVNP("Enter from_python Type caster for cv::Point");
+        if (!nanobind::isinstance<nanobind::tuple>(src))
+            return false;
+
+        auto tuple = nanobind::cast<nanobind::tuple>(src);
+        if (tuple.size() != 2)
+        {
+            PyErr_SetString(PyExc_ValueError, "Expected a tuple of size 2 to convert to cv::Point.");
+            return false;
+        }
+
+        try {
+            _Tp x = nanobind::cast<_Tp>(tuple[0]);
+            _Tp y = nanobind::cast<_Tp>(tuple[1]);
+            value = PointTp (x, y);
+            DEBUG_CVNP("Leave from_python Type caster for cv::Point");
+            return true;
+        }
+        catch (const std::exception& e) {
+            PyErr_SetString(PyExc_ValueError, e.what());
+            return false;
+        }
+    }
+
+    // Conversion part 2 (C++ -> Python, i.e., cv::Size_ -> tuple)
+    static handle from_cpp(const PointTp &value, rv_policy policy, cleanup_list *cleanup) noexcept
+    {
+        DEBUG_CVNP("Enter from_cpp Type caster for cv::Point");
+        auto r = nanobind::make_tuple(value.x, value.y).release();
+        DEBUG_CVNP("Leave from_cpp Type caster for cv::Point");
+        return r;
+    }
+};
+
+
+template<typename _Tp>
+struct type_caster<cv::Point3_<_Tp>>
+{
+    using PointTp = cv::Point3_<_Tp>;
+
+    NB_TYPE_CASTER(PointTp, const_name("tuple"));
+
+    // Conversion part 1 (Python -> C++, i.e., tuple -> cv::Size_)
+    bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept
+    {
+        DEBUG_CVNP("Enter from_python Type caster for cv::Point3_");
+        if (!nanobind::isinstance<nanobind::tuple>(src))
+            return false;
+
+        auto tuple = nanobind::cast<nanobind::tuple>(src);
+        if (tuple.size() != 3)
+        {
+            PyErr_SetString(PyExc_ValueError, "Expected a tuple of size 3 to convert to cv::Point3_.");
+            return false;
+        }
+
+        try {
+            _Tp x = nanobind::cast<_Tp>(tuple[0]);
+            _Tp y = nanobind::cast<_Tp>(tuple[1]);
+            _Tp z = nanobind::cast<_Tp>(tuple[2]);
+            value = PointTp (x, y, z);
+            DEBUG_CVNP("Leave from_python Type caster for cv::Point3_");
+            return true;
+        }
+        catch (const std::exception& e) {
+            PyErr_SetString(PyExc_ValueError, e.what());
+            return false;
+        }
+    }
+
+    // Conversion part 2 (C++ -> Python, i.e., cv::Size_ -> tuple)
+    static handle from_cpp(const PointTp &value, rv_policy policy, cleanup_list *cleanup) noexcept
+    {
+        DEBUG_CVNP("Enter from_cpp Type caster for cv::Point3_");
+        auto r = nanobind::make_tuple(value.x, value.y, value.z).release();
+        DEBUG_CVNP("Leave from_cpp Type caster for cv::Point3_");
+        return r;
+    }
+};
+
+
+template<typename _Tp>
+struct type_caster<cv::Scalar_<_Tp>>
+{
+    using ScalarTp = cv::Scalar_<_Tp>;
+
+    NB_TYPE_CASTER(ScalarTp, const_name("tuple"));
+
+    // Conversion part 1 (Python -> C++, i.e., tuple -> cv::Size_)
+    bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept
+    {
+        DEBUG_CVNP("Enter from_python Type caster for cv::Scalar_");
+        if (!nanobind::isinstance<nanobind::tuple>(src))
+            return false;
+
+        auto tuple = nanobind::cast<nanobind::tuple>(src);
+        size_t tupleSize = tuple.size();
+        if (tupleSize > 4)
+        {
+            PyErr_SetString(PyExc_ValueError, "Expected a tuple of size<=4 to convert to cv::Scalar_.");
+            return false;
+        }
+
+        try {
+            ScalarTp r;
+            if (tupleSize == 1)
+                r = ScalarTp(nanobind::cast<_Tp>(tuple[0]));
+            else if (tupleSize == 2)
+                r = ScalarTp(nanobind::cast<_Tp>(tuple[0]), nanobind::cast<_Tp>(tuple[1]));
+            else if (tupleSize == 3)
+                r = ScalarTp(nanobind::cast<_Tp>(tuple[0]), nanobind::cast<_Tp>(tuple[1]), nanobind::cast<_Tp>(tuple[2]));
+            else if (tupleSize == 4)
+                r = ScalarTp(nanobind::cast<_Tp>(tuple[0]), nanobind::cast<_Tp>(tuple[1]), nanobind::cast<_Tp>(tuple[2]), nanobind::cast<_Tp>(tuple[3]));
+
+            value = r;
+            DEBUG_CVNP("Leave from_python Type caster for cv::Scalar_");
+            return true;
+        }
+        catch (const std::exception& e) {
+            PyErr_SetString(PyExc_ValueError, e.what());
+            return false;
+        }
+    }
+
+    // Conversion part 2 (C++ -> Python, i.e., cv::Size_ -> tuple)
+    static handle from_cpp(const ScalarTp &value, rv_policy policy, cleanup_list *cleanup) noexcept
+    {
+        DEBUG_CVNP("Enter from_cpp Type caster for cv::Scalar_");
+        auto r = nanobind::make_tuple(value[0], value[1], value[2], value[3]).release();
+        DEBUG_CVNP("Leave from_cpp Type caster for cv::Scalar_");
+        return r;
+    }
+};
+
+
+template<typename _Tp>
+struct type_caster<cv::Rect_<_Tp>>
+{
+    using RectTp = cv::Rect_<_Tp>;
+
+    NB_TYPE_CASTER(RectTp, const_name("tuple"));
+
+    // Conversion part 1 (Python -> C++, i.e., tuple -> cv::Size_)
+    bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept
+    {
+        DEBUG_CVNP("Enter from_python Type caster for cv::Rect_");
+        if (!nanobind::isinstance<nanobind::tuple>(src))
+            return false;
+
+        auto tuple = nanobind::cast<nanobind::tuple>(src);
+        if (tuple.size() != 4)
+        {
+            PyErr_SetString(PyExc_ValueError, "Expected a tuple of size 4 to convert to cv::Rect_.");
+            return false;
+        }
+
+        try {
+            _Tp x = nanobind::cast<_Tp>(tuple[0]);
+            _Tp y = nanobind::cast<_Tp>(tuple[1]);
+            _Tp width = nanobind::cast<_Tp>(tuple[2]);
+            _Tp height = nanobind::cast<_Tp>(tuple[3]);
+            value = RectTp(x, y, width, height);
+            DEBUG_CVNP("Leave from_python Type caster for cv::Rect_");
+            return true;
+        }
+        catch (const std::exception& e) {
+            PyErr_SetString(PyExc_ValueError, e.what());
+            return false;
+        }
+    }
+
+    // Conversion part 2 (C++ -> Python, i.e., cv::Size_ -> tuple)
+    static handle from_cpp(const RectTp &value, rv_policy policy, cleanup_list *cleanup) noexcept
+    {
+        DEBUG_CVNP("Enter from_cpp Type caster for cv::Rect_");
+        auto r = nanobind::make_tuple(value.x, value.y, value.width, value.height).release();
+        DEBUG_CVNP("Leave from_cpp Type caster for cv::Rect_");
+        return r;
     }
 };
 

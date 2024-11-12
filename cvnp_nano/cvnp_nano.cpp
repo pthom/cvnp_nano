@@ -6,7 +6,7 @@ namespace cvnp_nano
 {
     namespace detail
     {
-        #define DEBUG_ALLOCATOR
+        // #define DEBUG_ALLOCATOR
 
 #ifdef DEBUG_ALLOCATOR
         int nbAllocations = 0;
@@ -176,6 +176,13 @@ namespace cvnp_nano
     {
         void *data = static_cast<void *>(m.data);
         size_t ndim = detail::determine_ndim(m);
+
+        // Test if m is contiguous
+        if (!m.isContinuous())
+        {
+            throw std::invalid_argument("cvnp::mat_to_nparray / Only contiguous cv::Mat are supported. / Please use cv::Mat::clone() to convert your matrix");
+        }
+
         std::vector<size_t> shape = detail::determine_shape(m);
         std::vector<int64_t> strides = detail::determine_strides(m);
         nanobind::dlpack::dtype dtype = detail::determine_np_dtype(m.depth());

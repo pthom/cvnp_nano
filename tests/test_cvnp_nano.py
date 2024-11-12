@@ -1,8 +1,9 @@
 import numpy as np
 import cvnp_nano_example  # noqa
-from cvnp_nano_example import CvNp_TestHelper  # noqa
+from cvnp_nano_example import CvNp_TestHelper, cvnp_roundtrip, short_lived_matx, short_lived_mat, RoundTripMatx21d  # type: ignore
 import math
 import pytest
+import random
 
 
 def are_float_close(x: float, y: float):
@@ -237,6 +238,258 @@ def test_point():
     assert are_float_close(o.pt3[2], 321.0)
 
 
+def test_cvnp_round_trip():
+    m = np.zeros([5, 6, 7])
+    m[3, 4, 5] = 156
+    m2 = cvnp_roundtrip(m)
+    assert (m == m2).all()
+
+    possible_types = [np.uint8, np.int8, np.uint16, np.int16, np.int32, float, np.float64]
+    for test_idx in range(300):
+        ndim = random.choice([2, 3])
+        shape = []
+        for dim in range(ndim):
+            if dim < 2:
+                shape.append(random.randrange(2, 1000))
+            else:
+                shape.append(random.randrange(2, 10))
+        type = random.choice(possible_types)
+
+        m = np.zeros(shape, dtype=type)
+
+        i = random.randrange(shape[0])
+        j = random.randrange(shape[1])
+        if ndim == 2:
+            m[i, j] = random.random()
+        elif ndim == 3:
+            k = random.randrange(shape[2])
+            m[i, j, k] = random.random()
+        else:
+            raise RuntimeError("Should not happen")
+
+        m2 = cvnp_roundtrip(m)
+
+        if not (m == m2).all():
+            print("argh")
+        assert (m == m2).all()
+
+
+def test_short_lived_matx():
+    """
+    We are calling the function ShortLivedMatx():
+
+        // Returns a short lived matrix: sharing memory for this matrix makes *no sense at all*,
+        // since its pointer lives on the stack and is deleted as soon as we exit the function!
+        cv::Matx33d ShortLivedMatx()
+        {
+            auto mat = cv::Matx33d::eye();
+            return mat;
+        }
+    """
+    m = short_lived_matx()
+    assert are_float_close(m[0, 0], 1.0)
+
+
+def test_short_lived_mat():
+    """
+    We are calling the function ShortLivedMat():
+
+        // Returns a short lived Mat: sharing memory for this matrix makes *no sense at all*,
+        // since its pointer lives on the stack and is deleted as soon as we exit the function!
+        cv::Mat ShortLivedMat()
+        {
+            auto mat = cv::Mat(cv::Size(300, 200), CV_8UC4);
+            mat = cv::Scalar(12, 34, 56, 78);
+            return mat;
+        }
+    """
+    m = short_lived_mat()
+    assert m.shape == (200, 300, 4)
+    assert (m[0, 0] == (12, 34, 56, 78)).all()
+
+
+def test_empty_mat():
+    m = np.zeros(shape=(0, 0, 3))
+    m2 = cvnp_roundtrip(m)
+    assert (m == m2).all()
+
+
+def test_additional_ref():
+    """
+    We are playing with these bindings
+        cv::Mat m10 = cv::Mat(cv::Size(100, 100), CV_32FC3, cv::Scalar(0.f, 0.f, 0.f));
+        int m10_refcount()
+        {
+            if (m10.u)
+                return m10.u->refcount;
+            else
+                { printf("m10.u is null!\n"); return 0; }
+        }
+    """
+    o = CvNp_TestHelper()
+    assert o.m10_refcount() == 1
+    m = o.m10
+    assert o.m10_refcount() == 1  # m is a
+    m[0, 0] = (24, 25, 26)
+    v = m[0, 0]  # v is a np.array
+    v2 = o.m10[0, 0]  # v2 is a np.array
+    expected = np.array([24, 25, 26], np.float32)
+    assert (v == expected).all()
+    assert (v2 == expected).all()
+
+
+def test_sub_matrices():
+    """
+    We are playing with these bindings
+        struct CvNp_TestHelper {
+            cv::Mat m10 = cv::Mat(cv::Size(100, 100), CV_32FC3, cv::Scalar(0.f, 0.f, 0.f));
+            void SetM10(int row, int col, cv::Vec3f v) { m10.at<cv::Vec3f>(row, col) = v; }
+            cv::Vec3f GetM10(int row, int col) { return m10.at<cv::Vec3f>(row, col); }
+            cv::Mat GetSubM10() { return m10(cv::Rect(1, 1, 3, 3)); }
+
+            ...
+        };
+    """
+    o = CvNp_TestHelper()
+    # Non contiguous matrices are not yet supported by cvnp_nano
+    with pytest.raises(TypeError):
+        sub_m10 = o.GetSubM10()
+
+    # #
+    # # 1. Transform cv::Mat and sub-matrices into numpy arrays / check that reference counts are handled correctly
+    # #
+    # # Transform the cv::Mat m10 into a linked numpy array (with shared memory) and assert that m10 now has 2 references
+    # m10: np.ndarray = o.m10
+    # assert o.m10_refcount() == 1
+    # # Also transform the m10's sub-matrix into a numpy array, and assert that m10's references count is increased
+    # sub_m10 = o.GetSubM10()
+    # assert o.m10_refcount() == 1
+    #
+    # #
+    # # 2. Modify values from C++ or python, and ensure that the data is shared
+    # #
+    # # Modify a value in m10 from C++, and ensure this is visible from python
+    # val00 = np.array([1, 2, 3], np.float32)
+    # o.SetM10(0, 0, val00)
+    # assert (m10[0, 0] == val00).all()
+    # # Modify a value in m10 from python and ensure this is visible from C++
+    # val10 = np.array([4, 5, 6], np.float32)
+    # o.m10[1, 1] = val10
+    # assert (o.m10[1, 1] == val10).all()
+    #
+    # #
+    # # 3. Check that values in sub-matrices are also changed
+    # #
+    # # Check that the sub-matrix is changed
+    # assert (sub_m10[0, 0] == val10).all()
+    # # Change a value in the sub-matrix from python
+    # val22 = np.array([7, 8, 9], np.float32)
+    # sub_m10[1, 1] = val22
+    # # And assert that the change propagated to the master matrix
+    # assert (o.m10[2, 2] == val22).all()
+    #
+    # #
+    # # 4. del python numpy arrays and ensure that the reference count is updated
+    # #
+    # del m10
+    # del sub_m10
+    # assert o.m10_refcount() == 1
+    #
+    # #
+    # # 5. Sub-matrices are supported from C++ to python, but not from python to C++!
+    # #
+    # # i. create a numpy sub-matrix
+    # full_matrix = np.ones([10, 10], np.float32)
+    # sub_matrix = full_matrix[1:5, 2:4]
+    # # ii. Try to copy it into a C++ matrix: this should raise a `ValueError`
+    # with pytest.raises(ValueError):
+    #     o.m = sub_matrix
+    # # iii. However, we can update the C++ matrix by using a contiguous copy of the sub-matrix
+    # sub_matrix_clone = np.ascontiguousarray(sub_matrix)
+    # o.m = sub_matrix_clone
+    # assert o.m.shape == sub_matrix.shape
+
+
+def test_scalar():
+    """
+    We are playing with this:
+        cv::Scalar scalar_double = cv::Scalar(1.);
+        cv::Scalar_<float> scalar_float = cv::Scalar_<float>(1.f, 2.f);
+        cv::Scalar_<int32_t> scalar_int32 = cv::Scalar_<int32_t>(1, 2, 3);
+        cv::Scalar_<uint8_t> scalar_uint8 = cv::Scalar_<uint8_t>(1, 2, 3, 4);
+    """
+    o = CvNp_TestHelper()
+    v = o.scalar_double
+    assert o.scalar_double == (1.0, 0.0, 0.0, 0.0)
+    o.scalar_double = (4.0, 5.0)
+    assert o.scalar_double == (4.0, 5.0, 0.0, 0.0)
+
+    assert o.scalar_float == (1.0, 2.0, 0.0, 0.0)
+    o.scalar_float = (4.0, 5.0, 6.0)
+    assert o.scalar_float == (4.0, 5.0, 6.0, 0.0)
+
+    assert o.scalar_int32 == (1, 2, 3, 0)
+    o.scalar_int32 = (4, 5, 6, 7)
+    assert o.scalar_int32 == (4, 5, 6, 7)
+
+    assert o.scalar_uint8 == (1, 2, 3, 4)
+    o.scalar_uint8 = (4, 5, 6, 7)
+    assert o.scalar_uint8 == (4, 5, 6, 7)
+
+    # Check that setting float values to an int scalar raises an error:
+    with pytest.raises(TypeError):
+        o.scalar_int32 = (1.23, 4.56)
+
+
+def test_rect():
+    """
+    We are playing with:
+        cv::Rect  rect_int = cv::Rect(1, 2, 3, 4);
+        cv::Rect_<double> rect_double = cv::Rect_<double>(5., 6., 7., 8.);
+    """
+    o = CvNp_TestHelper()
+
+    assert o.rect_int == (1, 2, 3, 4)
+    o.rect_int = (50, 55, 60, 65)
+    assert o.rect_int == (50, 55, 60, 65)
+    with pytest.raises(TypeError):
+        o.rect_int = (1, 2) # We should give 4 values!
+    with pytest.raises(TypeError):
+        o.rect_int = (1.1, 2.1, 3.1, 4.1) # We should int values!
+
+    assert o.rect_double == (5.0, 6.0, 7.0, 8.0)
+    o.rect_double = (50.1, 55.2, 60.3, 65.4)
+    assert o.rect_double == (50.1, 55.2, 60.3, 65.4)
+    with pytest.raises(TypeError):
+        o.rect_double = (1, 2) # We should give 4 values!
+
+
+def test_contiguous_check():
+    # Check regression with numpy 2:
+    # See https://github.com/pthom/cvnp/issues/17
+    # The contiguous check was changed to:
+    #    bool is_array_contiguous(const pybind11::array& a) { return a.flags() & pybind11::array::c_style; }
+
+    # 1. Check contiguous matrix
+    m = np.zeros((10,10),dtype=np.uint8)
+    cvnp_roundtrip(m)
+
+    # 2. Check that a non-contiguous matrix raises an error
+    full_matrix = np.ones([10, 10], np.float32)
+    sub_matrix = full_matrix[1:5, 2:4]
+    with pytest.raises(TypeError):
+        cvnp_roundtrip(sub_matrix)
+
+
+def test_matx_roundtrip():
+    # This test was failing with numpy 2 when matx_to_nparray
+    # did not transmit the stride for small matrices (Matx)
+    m = np.zeros((2, 1), np.float64)
+    m[0, 0] = 42.1
+    m[1, 0] = 43.1
+    m2 = RoundTripMatx21d(m)
+    assert are_float_close(m2[0, 0], 42.1)
+    assert are_float_close(m2[1, 0], 43.1)
 
 
 def main():
@@ -246,6 +499,17 @@ def main():
     test_vec_not_shared()
     test_size()
     test_point()
+    test_cvnp_round_trip()
+    test_short_lived_matx()
+    test_short_lived_mat()
+    test_empty_mat()
+
+    test_additional_ref()
+    test_sub_matrices()
+    test_scalar()
+    test_rect()
+    test_contiguous_check()
+    test_matx_roundtrip()
 
 
 if __name__ == "__main__":

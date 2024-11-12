@@ -107,6 +107,46 @@ struct CvNp_TestHelper
 };
 
 
+// Returns a short lived Matx: sharing memory for this matrix makes *no sense at all*,
+// since its pointer lives on the stack and is deleted as soon as we exit the function!
+cv::Matx33d ShortLivedMatx()
+{
+    auto mat = cv::Matx33d::eye();
+    return mat;
+}
+
+
+// Returns a short lived Mat: sharing memory for this matrix *makes sense*
+// since the capsule will add to its reference count
+cv::Mat ShortLivedMat()
+{
+    auto mat = cv::Mat(cv::Size(300, 200), CV_8UC4);
+    mat = cv::Scalar(12, 34, 56, 78);
+    return mat;
+}
+
+
+cv::Matx33d make_eye()
+{
+    return cv::Matx33d::eye();
+}
+
+
+void display_eye(cv::Matx33d m = cv::Matx33d::eye())
+{
+    printf("display_eye\n");
+    for(int row=0; row < 3; ++row)
+        printf("%lf, %lf, %lf\n", m(row, 0), m(row, 1), m(row, 2));
+}
+
+
+cv::Matx21d RoundTripMatx21d(cv::Matx21d & m)
+{
+    //std::cout << "RoundTripMatx21d received "  << m(0, 0) << "    " << m(1, 0) << "\n";
+    return m;
+}
+
+
 
 
 NB_MODULE(cvnp_nano_example, m)
@@ -163,5 +203,9 @@ NB_MODULE(cvnp_nano_example, m)
         ;
 
     m.def("cvnp_roundtrip", cvnp_roundtrip);
-    ;
+
+    m.def("short_lived_matx", ShortLivedMatx);
+    m.def("short_lived_mat", ShortLivedMat);
+    m.def("RoundTripMatx21d", RoundTripMatx21d);
+
 }
