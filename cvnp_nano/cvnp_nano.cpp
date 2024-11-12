@@ -1,16 +1,92 @@
 #include "cvnp_nano/cvnp_nano.h"
 #include "opencv2/core.hpp"
 
+// suppress warning:
+// cvnp_nano.cpp: warning: ‘cvnp_nano::synonyms::TypeSynonyms’ declared with greater visibility
+// than the type of its field ‘cvnp_nano::synonyms::TypeSynonyms::dtype’ [-Wattributes]
+#ifdef __clang__
+#pragma clang diagnostic ignored "-Wattributes"
+#elif defined(__GNUC__)
+#pragma GCC diagnostic ignored "-Wattributes"
+#endif
+
 namespace cvnp_nano
 {
-    namespace detail
+    namespace synonyms
     {
         // #define DEBUG_ALLOCATOR
 
 #ifdef DEBUG_ALLOCATOR
         int nbAllocations = 0;
 #endif
+        struct TypeSynonyms
+        {
+            int cv_depth = -1;
+            std::string cv_depth_name;
+            std::string scalar_typename_;
+            nanobind::dlpack::dtype dtype;
 
+            std::string str() const;
+        };
+
+        std::vector<TypeSynonyms> sTypeSynonyms
+            {
+                {CV_8U,  "CV_8U",  "uint8",   nanobind::dtype<uint8_t>()},
+                {CV_8S,  "CV_8S",  "int8",    nanobind::dtype<int8_t>()},
+                {CV_16U, "CV_16U", "uint16",  nanobind::dtype<uint16_t>()},
+                {CV_16S, "CV_16S", "int16",   nanobind::dtype<int16_t>()},
+                {CV_32S, "CV_32S", "int32",   nanobind::dtype<int32_t>()},
+                {CV_32F, "CV_32F", "float32", nanobind::dtype<float>()},
+                {CV_64F, "CV_64F", "float64", nanobind::dtype<double>()},
+
+                // Note: this format needs adaptations: float16
+            };
+
+
+        static int sColumnWidth = 12;
+
+        static std::string align_center(const std::string &s)
+        {
+            int nb_spaces = s.size() < sColumnWidth ? sColumnWidth - s.size() : 0;
+            int nb_spaces_left = nb_spaces / 2;
+            int nb_spaces_right = sColumnWidth - s.size() - nb_spaces_left;
+            if (nb_spaces_right < 0)
+                nb_spaces_right = 0;
+            return std::string((size_t) nb_spaces_left, ' ') + s + std::string((size_t) nb_spaces_right, ' ');
+        }
+
+        static std::string align_center(const int v)
+        {
+            return align_center(std::to_string(v));
+        }
+
+        std::string TypeSynonyms::str() const
+        {
+            std::string dtype_str =
+                std::string("code=") + std::to_string((int) dtype.code)
+                + " bits=" + std::to_string(dtype.bits)
+                + " lanes=" + std::to_string(dtype.lanes);
+            return align_center(cv_depth) + align_center(cv_depth_name) + align_center(scalar_typename_) +
+                   align_center(dtype_str);
+        }
+
+
+        std::string print_types_synonyms_str()
+        {
+            std::string title =
+                align_center("cv_depth") + align_center("cv_depth_name")
+                + align_center("np_format") + align_center("dtype_details");;
+
+            std::string r;
+            r = title + "\n";
+            for (const auto &format: sTypeSynonyms)
+                r = r + format.str() + "\n";
+            return r;
+        }
+    } // namespace synonyms
+
+    namespace detail
+    {
         // Translated from cv2_numpy.cpp in OpenCV source code
         // A custom allocator for cv::Mat that attaches an owner to the cv::Mat
         class CvnpAllocator : public cv::MatAllocator
@@ -95,7 +171,7 @@ namespace cvnp_nano
 
         nanobind::dlpack::dtype determine_np_dtype(int cv_depth)
         {
-            for (auto format_synonym : cvnp_nano::sTypeSynonyms)
+            for (auto format_synonym : synonyms::sTypeSynonyms)
                 if (format_synonym.cv_depth == cv_depth)
                     return format_synonym.dtype;
 
@@ -105,7 +181,7 @@ namespace cvnp_nano
 
         int determine_cv_depth(nanobind::dlpack::dtype dt)
         {
-            for (auto format_synonym : cvnp_nano::sTypeSynonyms)
+            for (auto format_synonym : synonyms::sTypeSynonyms)
                 if (format_synonym.dtype == dt)
                     return format_synonym.cv_depth;
 
@@ -235,67 +311,9 @@ namespace cvnp_nano
         return m;
     }
 
-    std::vector<TypeSynonyms> sTypeSynonyms
-    {
-        { CV_8U,  "CV_8U", "uint8", nanobind::dtype<uint8_t>() },
-        { CV_8S,  "CV_8S", "int8", nanobind::dtype<int8_t>() },
-        { CV_16U, "CV_16U", "uint16", nanobind::dtype<uint16_t>() },
-        { CV_16S, "CV_16S", "int16", nanobind::dtype<int16_t>() },
-        { CV_32S, "CV_32S", "int32", nanobind::dtype<int32_t>() },
-        { CV_32F, "CV_32F", "float32", nanobind::dtype<float>() },
-        { CV_64F, "CV_64F", "float64", nanobind::dtype<double>() },
-
-        // Note: this format needs adaptations: float16
-    };
-
-
-    static int sColumnWidth = 12;
-
-    static std::string align_center(const std::string& s)
-    {
-        int nb_spaces = s.size() < sColumnWidth ? sColumnWidth - s.size() : 0;
-        int nb_spaces_left = nb_spaces / 2;
-        int nb_spaces_right = sColumnWidth - s.size() - nb_spaces_left;
-        if (nb_spaces_right < 0)
-            nb_spaces_right = 0;
-        return std::string((size_t)nb_spaces_left, ' ') + s + std::string( (size_t)nb_spaces_right, ' ');
-    }
-    static std::string align_center(const int v)
-    {
-        return align_center(std::to_string(v));
-    }
-
-    std::string TypeSynonyms::str() const
-    {
-        std::string dtype_str =
-            std::string("code=") + std::to_string((int)dtype.code)
-            + " bits=" + std::to_string(dtype.bits)
-            + " lanes=" + std::to_string(dtype.lanes);
-        return    align_center(cv_depth) + align_center(cv_depth_name) + align_center(scalar_typename_) + align_center(dtype_str);
-    }
-
-
-    std::string _print_types_synonyms_str()
-    {
-        std::string title =
-            align_center("cv_depth") + align_center("cv_depth_name")
-            + align_center("np_format") + align_center("dtype_details");;
-
-        std::string r;
-        r = title + "\n";
-        for (const auto& format: sTypeSynonyms)
-            r = r + format.str() + "\n";
-        return r;
-    }
-
-    std::vector<TypeSynonyms> list_types_synonyms()
-    {
-        return sTypeSynonyms;
-    }
-
     void print_types_synonyms()
     {
-        std::cout << _print_types_synonyms_str();
+        std::cout << synonyms::print_types_synonyms_str();
     }
 
 } // namespace cvnp_nano

@@ -56,15 +56,19 @@ nanobind_build_library(nanobind SHARED)
 add_library(cvnp_nano cvnp_nano/cvnp_nano.cpp cvnp_nano/cvnp_nano.h)
 target_include_directories(cvnp_nano PUBLIC ${CMAKE_CURRENT_LIST_DIR})
 target_link_libraries(cvnp_nano PUBLIC opencv_core nanobind)
+if (UNIX)
+    # add fPIC
+    set_property(TARGET cvnp_nano PROPERTY POSITION_INDEPENDENT_CODE ON)
+endif()
 
 
 if (PROJECT_IS_TOP_LEVEL)
     # Add the example
     nanobind_add_module(cvnp_nano_example example/cvnp_nano_example.cpp)
     target_link_libraries(cvnp_nano_example PRIVATE cvnp_nano)
-    # Copy the .so or .pyd module into this dir, to facilitate the tests
+    # Copy the .so or .pyd module into tests/, to facilitate the tests
     add_custom_command(
         TARGET cvnp_nano_example POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:cvnp_nano_example> ${CMAKE_CURRENT_LIST_DIR}
+        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:cvnp_nano_example> ${CMAKE_CURRENT_LIST_DIR}/tests
     )
 endif()

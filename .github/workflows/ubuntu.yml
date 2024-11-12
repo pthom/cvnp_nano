@@ -30,5 +30,6 @@ jobs:
         cd build
         cmake .. -DPython_EXECUTABLE=$(which python) -DCMAKE_BUILD_TYPE=Release
         make -j
+        cd ..
         python tests/test_cvnp_nano.py
   
