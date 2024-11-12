@@ -364,7 +364,7 @@ struct type_caster<T, enable_if_t<is_vec_or_matx<T>::value>>
 template<typename _Tp>
 struct type_caster<cv::Size_<_Tp>>
 {
-    using SizeTp = cv::Size_<int>;
+    using SizeTp = cv::Size_<_Tp>;
 
     NB_TYPE_CASTER(SizeTp, const_name("tuple"));
 
