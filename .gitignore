@@ -5,3 +5,5 @@ cmake-build-*/
 dist*/
 *.so
 *.pyd
+.idea/
+__pycache__
