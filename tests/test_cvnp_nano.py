@@ -480,7 +480,7 @@ def main():
     test_mat_shared()
     test_mat__shared()
     test_matx_not_shared()
-    test_vec_shared()
+    test_vec_not_shared()
     test_size()
     test_point()
     test_cvnp_round_trip()
