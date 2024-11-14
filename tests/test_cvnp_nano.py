@@ -120,7 +120,15 @@ def test_mat__shared():
     assert(o.m_double[2, 1] == 4.5)
 
 
-def test_matx_shared():
+def matx_as_tuple_shape(matx: tuple[tuple[float, ...], ...]) -> tuple[int, int]:
+    """
+    Convert a matx to a tuple of shape
+    """
+    nb_rows = len(matx)
+    nb_cols = len(matx[0])
+    return nb_rows, nb_cols
+
+def test_matx_not_shared():
     """
     We are playing with these elements
         struct CvNp_TestHelper {
@@ -128,62 +136,50 @@ def test_matx_shared():
             void SetMX_ns(int row, int col, double v) { mx_ns(row, col) = v;}
             ...
         };
+
+        mx_ns is published as a tuple[tuple[float]] in Python
     """
     # create object
     o = CvNp_TestHelper()
 
     m_linked = o.mx_ns                   # Make a numpy array that is a copy of mx_ns *without* shared memory
-    assert m_linked.shape == (3, 2)      # check its shape
-    m_linked[1, 1] = 3                   # a value change in the numpy array made from python
-    assert o.mx_ns[1, 1] == 3            # is visible from C++!
-
-    o.SetMX_ns(2, 1, 15)                             # A C++ change a value in the matrix
-    assert are_float_close(m_linked[2, 1], 15)   # is visible from python,
-    m_linked = o.mx_ns                               # but becomes visible after we re-create the numpy array from
-    assert are_float_close(m_linked[2, 1], 15)       # the cv::Matx
-
-    # Make a clone of the C++ mat and change a value in it
-    # => Make sure that the C++ mat is not impacted
-    m_clone = np.copy(o.mx_ns)
-    m_clone[1, 1] = 18
-    assert not are_float_close(o.mx_ns[1, 1], 18)
-
-    # Change the whole C++ matx, by assigning to it a new matrix with different values
-    # check that values are ok
-    new_shape = o.mx_ns.shape
-    new_type = o.mx_ns.dtype
-    new_mat = np.zeros(new_shape, new_type)
-    new_mat[0, 0] = 42.1
-    new_mat[1, 0] = 43.1
-    new_mat[0, 1] = 44.1
-    o.mx_ns = new_mat
-    assert o.mx_ns.shape == new_shape
-    assert o.mx_ns.dtype == new_type
-    assert are_float_close(o.mx_ns[0, 0], 42.1)
-    assert are_float_close(o.mx_ns[1, 0], 43.1)
-    assert are_float_close(o.mx_ns[0, 1], 44.1)
-
-    # Try to change the shape of the Matx (not allowed)
-    new_mat = np.zeros([100, 100, 10], new_type)
+    assert matx_as_tuple_shape(m_linked) == (3, 2)      # check its shape
     with pytest.raises(TypeError):
-        o.mx_ns = new_mat
+        m_linked[1, 1] = 3               # a value change is forbidden on the Python side (this is a tuple!)
+
+    o.SetMX_ns(2, 1, 15)                               # A C++ change a value in the matrix
+    assert not are_float_close(m_linked[2][1], 15)  # is not visible from python,
+    m_linked = o.mx_ns                                 # but becomes visible after we re-create the numpy array from
+    assert are_float_close(m_linked[2][1], 15)      # the cv::Matx
 
 
-def test_vec_shared():
+def test_vec_not_shared():
     """
     We are playing with these elements
         cv::Vec3f v3_ns = {1.f, 2.f, 3.f};
         void SetV3_ns(int idx, float v) { v3_ns(idx) = v; }
+
+        v3_ns is published as a tuple[float] in Python
     """
     o = CvNp_TestHelper()
-    assert o.v3_ns.shape == (3,)
+    assert len(o.v3_ns) == 3
     assert o.v3_ns[0] == 1.
 
-    o.v3_ns[0] = 10
-    assert o.v3_ns[0] == 10. # Vec are shared
+    assert isinstance(o.v3_ns, tuple)
 
-    o.SetV3_ns(0, 10)
-    assert o.v3_ns[0] == 10.
+    o.SetV3_ns(0, 10)        # A C++ change a value in the matrix
+    assert o.v3_ns[0] == 10. # is visible from python if we re-create the tuple from the cv::Vec
+
+
+def test_matx_roundtrip():
+    # m is a cv::Matx21d in C++, and a tuple[tuple[float]] in Python
+    m = (
+        (42.1,),
+        (43.1,)
+    )
+    m2 = RoundTripMatx21d(m)
+    assert are_float_close(m2[0][0], 42.1)
+    assert are_float_close(m2[1][0], 43.1)
 
 
 def test_size():
@@ -287,7 +283,7 @@ def test_short_lived_matx():
         }
     """
     m = short_lived_matx()
-    assert are_float_close(m[0, 0], 1.0)
+    assert are_float_close(m[0][0], 1.0)
 
 
 def test_short_lived_mat():
@@ -480,22 +476,10 @@ def test_contiguous_check():
     with pytest.raises(TypeError):
         cvnp_roundtrip(sub_matrix)
 
-
-def test_matx_roundtrip():
-    # This test was failing with numpy 2 when matx_to_nparray
-    # did not transmit the stride for small matrices (Matx)
-    m = np.zeros((2, 1), np.float64)
-    m[0, 0] = 42.1
-    m[1, 0] = 43.1
-    m2 = RoundTripMatx21d(m)
-    assert are_float_close(m2[0, 0], 42.1)
-    assert are_float_close(m2[1, 0], 43.1)
-
-
 def main():
     test_mat_shared()
     test_mat__shared()
-    test_matx_shared()
+    test_matx_not_shared()
     test_vec_shared()
     test_size()
     test_point()
@@ -515,6 +499,7 @@ def main():
     from cvnp_nano_example import print_types_synonyms  # noqa
     print("List of types synonyms:")
     print_types_synonyms()
+
 
 if __name__ == "__main__":
      main()

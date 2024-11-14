@@ -222,145 +222,125 @@ struct type_caster<cv::Mat_<_Tp>> : public type_caster<cv::Mat> // Inherit from 
 
 
 
-// Type caster for cv::Vec or cv::Matx
-// ====================================
-template <typename T>
-using is_vec_or_matx = std::disjunction<std::is_same<T, cv::Vec<typename T::value_type, T::channels>>, std::is_same<T, cv::Matx<typename T::value_type, T::rows, T::cols>>>;
-
-template <typename T>
-struct type_caster<T, enable_if_t<is_vec_or_matx<T>::value>>
+// Type caster for cv::Vec
+// =======================
+template <typename _Tp, int cn>
+struct type_caster<cv::Vec<_Tp, cn>>
 {
+    using VecTp = cv::Vec<_Tp, cn>;
+    using ScalarTp = _Tp;
+    static constexpr size_t size = cn;
 
-    // Info about cv::Vec or cv::Matx
-    using _Tp = typename T::value_type;  // scalar type
-    static constexpr int rows = T::rows; // number of rows
-    static constexpr int cols = T::cols; // number of columns (cn)
-    static constexpr bool is_matx = std::is_same_v<T, cv::Matx<typename T::value_type, T::rows, T::cols>>;
+    NB_TYPE_CASTER(VecTp, const_name("tuple"));
 
-    // Define ndarray
-    using ndarray_shape = std::conditional_t<is_matx, shape<rows, cols>, shape<rows>>;
-    using NDArray = ndarray<_Tp, numpy, ndarray_shape>;
-    using NDArrayCaster = type_caster<NDArray>;
+    // Conversion from Python to C++ (tuple -> cv::Vec)
+    bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
+        DEBUG_CVNP("Enter from_python Type caster for cv::Vec");
+        if (!isinstance<sequence>(src))
+            return false;
 
-    NB_TYPE_CASTER(T, NDArrayCaster::Name);
-
-    bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept
-    {
-        DEBUG_CVNP("Enter from_python Type caster for vec_or_matx");
-        // Check if src is ndarray
-        NDArrayCaster caster;
-        bool is_valid_ndarray = caster.from_python(src, flags, cleanup);
-        if (!is_valid_ndarray)
-        {
+        auto tuple = nanobind::cast<nanobind::tuple>(src);
+        if (tuple.size() != size) {
+            PyErr_SetString(PyExc_ValueError, "Expected a tuple of size N to convert to cv::Vec.");
             return false;
         }
 
-        // Convert ndarray to cv::Vec or cv::Matx
-        const NDArray &array = caster.value;
-        memcpy(value.val, array.data(), rows * cols * sizeof(_Tp));
-        DEBUG_CVNP("Leave from_python Type caster for vec_or_matx");
-        return true;
+        try {
+            for (size_t i = 0; i < size; ++i) {
+                value[i] = cast<ScalarTp>(tuple[i]);
+            }
+            DEBUG_CVNP("Leave from_python Type caster for cv::Vec");
+            return true;
+        } catch (const std::exception &e) {
+            PyErr_SetString(PyExc_ValueError, e.what());
+            return false;
+        }
     }
 
-    static handle from_cpp(const T &matx, rv_policy policy, cleanup_list *cleanup) noexcept
-    {
-        constexpr int ndim = is_matx ? 2 : 1;
-        DEBUG_CVNP("Enter from_cpp Type caster for vec_or_matx with ndim=" << ndim);
-
-        size_t shape[ndim];
-        if constexpr (is_matx) {
-            shape[0] = rows;
-            shape[1] = cols;
-            DEBUG_CVNP("  Matx shape (2D): " << shape[0] << " x " << shape[1]);
-        } else {
-            shape[0] = rows;
-            DEBUG_CVNP("  Vec shape (1D): " << shape[0]);
+    // Conversion from C++ to Python (cv::Vec -> tuple)
+    static handle from_cpp(const VecTp &value, rv_policy policy, cleanup_list *cleanup) noexcept {
+        DEBUG_CVNP("Enter from_cpp Type caster for cv::Vec");
+        nanobind::list tuple_as_list;
+        for (size_t i = 0; i < size; ++i) {
+            tuple_as_list.append(value[i]);
         }
-
-        size_t total_elements = rows * cols;
-        _Tp* matx_data = nullptr;
-        nanobind::object data_owner;  // Change from handle to object
-
-        // Set default policies if automatic
-        if (policy == rv_policy::automatic)
-            policy = rv_policy::copy;
-        else if (policy == rv_policy::automatic_reference)
-            policy = rv_policy::reference;
-
-        // Handle each policy case
-        switch (policy) {
-            case rv_policy::copy:
-            case rv_policy::move: {
-                DEBUG_CVNP("  policy=copy or move => making copy of matx data");
-                matx_data = new _Tp[total_elements];
-                std::memcpy(matx_data, matx.val, total_elements * sizeof(_Tp));
-
-                // Create capsule as a nanobind::object to manage reference counting
-                data_owner = nanobind::capsule(matx_data, [](void *p) noexcept {
-                    delete[] static_cast<_Tp*>(p);
-                });
-                break;
-            }
-            case rv_policy::take_ownership: {
-                DEBUG_CVNP("  policy=take_ownership => transferring ownership of matx data");
-                matx_data = new _Tp[total_elements];
-                std::memcpy(matx_data, matx.val, total_elements * sizeof(_Tp));
-
-                data_owner = nanobind::capsule(matx_data, [](void *p) noexcept {
-                    delete[] static_cast<_Tp*>(p);
-                });
-                break;
-            }
-            case rv_policy::reference:
-            case rv_policy::reference_internal: {
-                DEBUG_CVNP("  policy=reference or reference_internal => using existing matx data");
-                matx_data = const_cast<_Tp*>(matx.val);
-
-                // No need for data_owner in reference policies
-                data_owner = nanobind::object();  // Empty object
-                break;
-            }
-            default: {
-                DEBUG_CVNP("  Unsupported policy => raising exception");
-                PyErr_WarnFormat(PyExc_Warning, 1,
-                                 "cvnp_nano: Unsupported rv_policy for vec_or_matx type caster: policy=%i",
-                                 static_cast<int>(policy));
-                return {};
-            }
-        }
-
-        // Set dtype explicitly and initialize ndarray
-        dlpack::dtype dtype = nanobind::dtype<_Tp>();
-
-        // Create ndarray and verify properties
-        ndarray<> a(matx_data, ndim, shape, data_owner, nullptr, dtype);
-
-        if (a.ndim() != ndim) {
-            DEBUG_CVNP("Error: Mismatch in ndarray dimension. Expected " << ndim << ", got " << a.ndim());
-            return {};  // Early return to prevent further issues
-        }
-        for (int i = 0; i < ndim; ++i) {
-            if (shape[i] != a.shape(i)) {
-                DEBUG_CVNP("Error: Mismatch in shape dimension " << i << ". Expected " << shape[i] << ", got " << a.shape(i));
-                return {};  // Early return if shape mismatch
-            }
-        }
-
-        // Export the ndarray and return
-        auto r = ndarray_export(
-            a.handle(),
-            nanobind::numpy::value,
-            policy,
-            cleanup
-        );
-
-        DEBUG_CVNP("Leave from_cpp Type caster for vec_or_matx");
-        return r;
+        nanobind::tuple tuple(tuple_as_list);
+        DEBUG_CVNP("Leave from_cpp Type caster for cv::Vec");
+        return tuple.release();
     }
-
 };
 
 
+// Type caster for cv::Matx
+// ========================
+template <typename _Tp, int m, int n>
+struct type_caster<cv::Matx<_Tp, m, n>>
+{
+    using MatxTp = cv::Matx<_Tp, m, n>;
+    using ScalarTp = _Tp;
+    static constexpr size_t rows = m;
+    static constexpr size_t cols = n;
+
+    NB_TYPE_CASTER(MatxTp, const_name("tuple"));
+
+    // Conversion from Python to C++ (tuple -> cv::Matx)
+    bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
+        DEBUG_CVNP("Enter from_python Type caster for cv::Matx");
+        if (!isinstance<sequence>(src))
+            return false;
+
+        auto outer_tuple = nanobind::cast<nanobind::tuple>(src);
+        if (outer_tuple.size() != rows) {
+            PyErr_SetString(PyExc_ValueError, "Expected a tuple of size 'rows' to convert to cv::Matx.");
+            return false;
+        }
+
+        try {
+            for (size_t i = 0; i < rows; ++i) {
+                auto inner_obj = outer_tuple[i];
+                if (!isinstance<sequence>(inner_obj)) {
+                    PyErr_SetString(PyExc_ValueError, "Expected inner elements to be sequences for cv::Matx.");
+                    return false;
+                }
+                auto inner_tuple = nanobind::cast<nanobind::tuple>(inner_obj);
+                if (inner_tuple.size() != cols) {
+                    PyErr_SetString(PyExc_ValueError, "Expected inner tuples of size 'cols' to convert to cv::Matx.");
+                    return false;
+                }
+                for (size_t j = 0; j < cols; ++j) {
+                    value(i, j) = cast<ScalarTp>(inner_tuple[j]);
+                }
+            }
+            DEBUG_CVNP("Leave from_python Type caster for cv::Matx");
+            return true;
+        } catch (const std::exception &e) {
+            PyErr_SetString(PyExc_ValueError, e.what());
+            return false;
+        }
+    }
+
+    // Conversion from C++ to Python (cv::Matx -> tuple)
+    static handle from_cpp(const MatxTp &value, rv_policy policy, cleanup_list *cleanup) noexcept {
+        DEBUG_CVNP("Enter from_cpp Type caster for cv::Matx");
+        nanobind::list outer_list;
+        for (size_t i = 0; i < rows; ++i) {
+            nanobind::list inner_list;
+            for (size_t j = 0; j < cols; ++j) {
+                inner_list.append(value(i, j));
+            }
+            nanobind::tuple inner_tuple(inner_list);
+            outer_list.append(inner_tuple);
+        }
+        nanobind::tuple outer_tuple(outer_list);
+        DEBUG_CVNP("Leave from_cpp Type caster for cv::Matx");
+        return outer_tuple.release();
+    }
+};
+
+
+
+// Type caster for cv::Size
+// ========================
 template<typename _Tp>
 struct type_caster<cv::Size_<_Tp>>
 {
@@ -406,6 +386,8 @@ struct type_caster<cv::Size_<_Tp>>
 };
 
 
+// Type caster for cv::Point
+// =========================
 template<typename _Tp>
 struct type_caster<cv::Point_<_Tp>>
 {
@@ -451,6 +433,8 @@ struct type_caster<cv::Point_<_Tp>>
 };
 
 
+// Type caster for cv::Point3_
+// ===========================
 template<typename _Tp>
 struct type_caster<cv::Point3_<_Tp>>
 {
@@ -497,6 +481,8 @@ struct type_caster<cv::Point3_<_Tp>>
 };
 
 
+// Type caster for cv::Scalar_
+// ===========================
 template<typename _Tp>
 struct type_caster<cv::Scalar_<_Tp>>
 {
@@ -551,6 +537,8 @@ struct type_caster<cv::Scalar_<_Tp>>
 };
 
 
+// Type caster for cv::Rect
+// ========================
 template<typename _Tp>
 struct type_caster<cv::Rect_<_Tp>>
 {
