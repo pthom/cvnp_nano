@@ -22,19 +22,7 @@ cd external
 git submodule add https://github.com/pthom/cvnp_nano.git
 ```
 
-2. Link it to your python module:
-
-Either using the provided CMakeLists:
-
-```cmake
-add_subdirectory(path/to/cvnp_nano)
-target_link_libraries(your_target PRIVATE cvnp_nano)
-```
-
-Or, just add `cvnp_nano/cvnp_nano.cpp` and `cvnp_nano/cvnp_nano.h` to your sources.
-
-
-3. In your module, include cvnp:
+2. In your module, include cvnp:
 
 ```cpp
 #include "cvnp_nano/cvnp_nano.h"
