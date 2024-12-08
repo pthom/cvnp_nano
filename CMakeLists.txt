@@ -55,7 +55,7 @@ find_opencv()
 nanobind_build_library(nanobind SHARED)
 add_library(cvnp_nano cvnp_nano/cvnp_nano.cpp cvnp_nano/cvnp_nano.h)
 target_include_directories(cvnp_nano PUBLIC ${CMAKE_CURRENT_LIST_DIR})
-target_link_libraries(cvnp_nano PUBLIC opencv_core nanobind)
+target_link_libraries(cvnp_nano PRIVATE opencv_core nanobind)
 if (UNIX)
     # add fPIC
     set_property(TARGET cvnp_nano PROPERTY POSITION_INDEPENDENT_CODE ON)
