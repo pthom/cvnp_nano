@@ -2,6 +2,14 @@ cmake_minimum_required(VERSION 3.19)
 project(cvnp_nano LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 14)
 
+if (NOT PROJECT_IS_TOP_LEVEL)
+    message(FATAL_ERROR "
+    This CMakeLists.txt is only used for the CI Tests.
+    When using this in your project just include cvnp_nano/cvnp_nano.h
+    ")
+endif()
+
+
 macro(find_nanobind)
     # From https://nanobind.readthedocs.io/en/latest/building.html
 
@@ -48,27 +56,14 @@ macro(find_opencv)
     endif()
 endmacro()
 
+
 find_nanobind()
 find_opencv()
-
-# We need to build nanobind before we can link against it
-nanobind_build_library(nanobind SHARED)
-add_library(cvnp_nano cvnp_nano/cvnp_nano.cpp cvnp_nano/cvnp_nano.h)
-target_include_directories(cvnp_nano PUBLIC ${CMAKE_CURRENT_LIST_DIR})
-target_link_libraries(cvnp_nano PRIVATE opencv_core nanobind)
-if (UNIX)
-    # add fPIC
-    set_property(TARGET cvnp_nano PROPERTY POSITION_INDEPENDENT_CODE ON)
-endif()
-
-
-if (PROJECT_IS_TOP_LEVEL)
-    # Add the example
-    nanobind_add_module(cvnp_nano_example example/cvnp_nano_example.cpp)
-    target_link_libraries(cvnp_nano_example PRIVATE cvnp_nano)
-    # Copy the .so or .pyd module into tests/, to facilitate the tests
-    add_custom_command(
-        TARGET cvnp_nano_example POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:cvnp_nano_example> ${CMAKE_CURRENT_LIST_DIR}/tests
-    )
-endif()
+nanobind_add_module(cvnp_nano_example example/cvnp_nano_example.cpp)
+target_link_libraries(cvnp_nano_example PRIVATE opencv_core)
+target_include_directories(cvnp_nano_example PRIVATE ${CMAKE_CURRENT_LIST_DIR})
+# Copy the .so or .pyd module into tests/, to facilitate the tests
+add_custom_command(
+    TARGET cvnp_nano_example POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:cvnp_nano_example> ${CMAKE_CURRENT_LIST_DIR}/tests
+)
