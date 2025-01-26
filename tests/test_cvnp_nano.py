@@ -460,21 +460,21 @@ def test_scalar():
     """
     o = CvNp_TestHelper()
     v = o.scalar_double
-    assert o.scalar_double == (1.0, 0.0, 0.0, 0.0)
+    assert o.scalar_double == [1.0, 0.0, 0.0, 0.0]
     o.scalar_double = (4.0, 5.0)
-    assert o.scalar_double == (4.0, 5.0, 0.0, 0.0)
+    assert o.scalar_double == [4.0, 5.0, 0.0, 0.0]
 
-    assert o.scalar_float == (1.0, 2.0, 0.0, 0.0)
-    o.scalar_float = (4.0, 5.0, 6.0)
-    assert o.scalar_float == (4.0, 5.0, 6.0, 0.0)
+    assert o.scalar_float == [1.0, 2.0, 0.0, 0.0]
+    o.scalar_float = np.array([4.0, 5.0, 6.0], np.float32)
+    assert o.scalar_float == [4.0, 5.0, 6.0, 0.0]
 
-    assert o.scalar_int32 == (1, 2, 3, 0)
-    o.scalar_int32 = (4, 5, 6, 7)
-    assert o.scalar_int32 == (4, 5, 6, 7)
+    assert o.scalar_int32 == [1, 2, 3, 0]
+    o.scalar_int32 = [4, 5, 6, 7]
+    assert o.scalar_int32 == [4, 5, 6, 7]
 
-    assert o.scalar_uint8 == (1, 2, 3, 4)
+    assert o.scalar_uint8 == [1, 2, 3, 4]
     o.scalar_uint8 = (4, 5, 6, 7)
-    assert o.scalar_uint8 == (4, 5, 6, 7)
+    assert o.scalar_uint8 == [4, 5, 6, 7]
 
     # Check that setting float values to an int scalar raises an error:
     with pytest.raises(TypeError):
@@ -489,17 +489,17 @@ def test_rect():
     """
     o = CvNp_TestHelper()
 
-    assert o.rect_int == (1, 2, 3, 4)
+    assert o.rect_int == [1, 2, 3, 4]
     o.rect_int = (50, 55, 60, 65)
-    assert o.rect_int == (50, 55, 60, 65)
+    assert o.rect_int == [50, 55, 60, 65]
     with pytest.raises(TypeError):
         o.rect_int = (1, 2) # We should give 4 values!
     with pytest.raises(TypeError):
-        o.rect_int = (1.1, 2.1, 3.1, 4.1) # We should int values!
+        o.rect_int = [1.1, 2.1, 3.1, 4.1] # We should int values!
 
-    assert o.rect_double == (5.0, 6.0, 7.0, 8.0)
-    o.rect_double = (50.1, 55.2, 60.3, 65.4)
-    assert o.rect_double == (50.1, 55.2, 60.3, 65.4)
+    assert o.rect_double == [5.0, 6.0, 7.0, 8.0]
+    o.rect_double = np.array((1, 2, 3, 4), np.float32)
+    assert o.rect_double == [1, 2, 3, 4]
     with pytest.raises(TypeError):
         o.rect_double = (1, 2) # We should give 4 values!
 
