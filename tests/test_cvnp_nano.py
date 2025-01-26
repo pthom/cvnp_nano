@@ -137,20 +137,47 @@ def test_matx_not_shared():
             ...
         };
 
-        mx_ns is published as a tuple[tuple[float]] in Python
+        mx_ns is published as a list[list[float]] in Python
     """
     # create object
     o = CvNp_TestHelper()
 
-    m_linked = o.mx_ns                   # Make a numpy array that is a copy of mx_ns *without* shared memory
-    assert matx_as_tuple_shape(m_linked) == (3, 2)      # check its shape
-    with pytest.raises(TypeError):
-        m_linked[1, 1] = 3               # a value change is forbidden on the Python side (this is a tuple!)
+    m_unlinked = o.mx_ns                   # Make a numpy array that is a copy of mx_ns *without* shared memory
+    assert matx_as_tuple_shape(m_unlinked) == (3, 2)      # check its shape
+
+    m_unlinked[1][1] = 0.0  # A change in Python
+    assert o.mx_ns[1][1] != 0.0  # is not visible from C++
 
     o.SetMX_ns(2, 1, 15)                               # A C++ change a value in the matrix
-    assert not are_float_close(m_linked[2][1], 15)  # is not visible from python,
-    m_linked = o.mx_ns                                 # but becomes visible after we re-create the numpy array from
-    assert are_float_close(m_linked[2][1], 15)      # the cv::Matx
+    assert not are_float_close(m_unlinked[2][1], 15)  # is not visible from python,
+    m_unlinked = o.mx_ns                                 # but becomes visible after we re-create the numpy array from
+    assert are_float_close(m_unlinked[2][1], 15)      # the cv::Matx
+
+    # Test set from a tuple
+    o.mx_ns = (
+        (1.0, 2.0),
+        (3.0, 4.0),
+        (5.0, 6.0)
+    )
+    assert o.mx_ns[2][1] == 6.0
+
+    # Test set from a list
+    l = [
+        [7.0, 8.0],
+        [9.0, 10.0],
+        [11.0, 12.0]
+    ]
+    o.mx_ns = l
+    assert o.mx_ns[1][1] == 10.0
+
+    # Test set from a numpy array
+    a = np.array([
+        [13.0, 14.0],
+        [15.0, 16.0],
+        [17.0, 18.0]
+    ], np.float32)
+    o.mx_ns = a
+    assert o.mx_ns[0][0] == 13.0
 
 
 def test_vec_not_shared():
@@ -159,16 +186,33 @@ def test_vec_not_shared():
         cv::Vec3f v3_ns = {1.f, 2.f, 3.f};
         void SetV3_ns(int idx, float v) { v3_ns(idx) = v; }
 
-        v3_ns is published as a tuple[float] in Python
+        v3_ns is published as a list[float] in Python
     """
     o = CvNp_TestHelper()
     assert len(o.v3_ns) == 3
     assert o.v3_ns[0] == 1.
 
-    assert isinstance(o.v3_ns, tuple)
+    assert isinstance(o.v3_ns, list)
+
+    o.v3_ns[0] = 54.0         # A change from Python
+    assert o.v3_ns[0] != 0.0  # Is **not** visible from C++ (no shared memory)
 
     o.SetV3_ns(0, 10)        # A C++ change a value in the matrix
     assert o.v3_ns[0] == 10. # is visible from python if we re-create the tuple from the cv::Vec
+
+    # Test set from a tuple
+    o.v3_ns = (1.0, 2.0, 3.0)
+    assert o.v3_ns[2] == 3.0
+
+    # Test set from a list
+    l = [4.0, 5.0, 6.0]
+    o.v3_ns = l
+    assert o.v3_ns[1] == 5.0
+
+    # Test set from a numpy array
+    a = np.array([7.0, 8.0, 9.0], np.float32)
+    o.v3_ns = a
+    assert o.v3_ns[0] == 7.0
 
 
 def test_matx_roundtrip():
@@ -416,21 +460,21 @@ def test_scalar():
     """
     o = CvNp_TestHelper()
     v = o.scalar_double
-    assert o.scalar_double == (1.0, 0.0, 0.0, 0.0)
+    assert o.scalar_double == [1.0, 0.0, 0.0, 0.0]
     o.scalar_double = (4.0, 5.0)
-    assert o.scalar_double == (4.0, 5.0, 0.0, 0.0)
+    assert o.scalar_double == [4.0, 5.0, 0.0, 0.0]
 
-    assert o.scalar_float == (1.0, 2.0, 0.0, 0.0)
-    o.scalar_float = (4.0, 5.0, 6.0)
-    assert o.scalar_float == (4.0, 5.0, 6.0, 0.0)
+    assert o.scalar_float == [1.0, 2.0, 0.0, 0.0]
+    o.scalar_float = np.array([4.0, 5.0, 6.0], np.float32)
+    assert o.scalar_float == [4.0, 5.0, 6.0, 0.0]
 
-    assert o.scalar_int32 == (1, 2, 3, 0)
-    o.scalar_int32 = (4, 5, 6, 7)
-    assert o.scalar_int32 == (4, 5, 6, 7)
+    assert o.scalar_int32 == [1, 2, 3, 0]
+    o.scalar_int32 = [4, 5, 6, 7]
+    assert o.scalar_int32 == [4, 5, 6, 7]
 
-    assert o.scalar_uint8 == (1, 2, 3, 4)
+    assert o.scalar_uint8 == [1, 2, 3, 4]
     o.scalar_uint8 = (4, 5, 6, 7)
-    assert o.scalar_uint8 == (4, 5, 6, 7)
+    assert o.scalar_uint8 == [4, 5, 6, 7]
 
     # Check that setting float values to an int scalar raises an error:
     with pytest.raises(TypeError):
@@ -445,17 +489,17 @@ def test_rect():
     """
     o = CvNp_TestHelper()
 
-    assert o.rect_int == (1, 2, 3, 4)
+    assert o.rect_int == [1, 2, 3, 4]
     o.rect_int = (50, 55, 60, 65)
-    assert o.rect_int == (50, 55, 60, 65)
+    assert o.rect_int == [50, 55, 60, 65]
     with pytest.raises(TypeError):
         o.rect_int = (1, 2) # We should give 4 values!
     with pytest.raises(TypeError):
-        o.rect_int = (1.1, 2.1, 3.1, 4.1) # We should int values!
+        o.rect_int = [1.1, 2.1, 3.1, 4.1] # We should int values!
 
-    assert o.rect_double == (5.0, 6.0, 7.0, 8.0)
-    o.rect_double = (50.1, 55.2, 60.3, 65.4)
-    assert o.rect_double == (50.1, 55.2, 60.3, 65.4)
+    assert o.rect_double == [5.0, 6.0, 7.0, 8.0]
+    o.rect_double = np.array((1, 2, 3, 4), np.float32)
+    assert o.rect_double == [1, 2, 3, 4]
     with pytest.raises(TypeError):
         o.rect_double = (1, 2) # We should give 4 values!
 
