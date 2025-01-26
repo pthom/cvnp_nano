@@ -289,59 +289,64 @@ struct type_caster<cv::Matx<_Tp, m, n>>
     static constexpr size_t rows = m;
     static constexpr size_t cols = n;
 
-    NB_TYPE_CASTER(MatxTp, const_name("tuple"));
+    NB_TYPE_CASTER(MatxTp, const_name("list_of_list"));
 
-    // Conversion from Python to C++ (tuple -> cv::Matx)
+    // Conversion from Python to C++ (sequence-of-sequences -> cv::Matx)
     bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
-        DEBUG_CVNP("Enter from_python Type caster for cv::Matx");
-        if (!isinstance<sequence>(src))
+        if (!PySequence_Check(src.ptr())) {
+            PyErr_SetString(PyExc_TypeError, "Expected a sequence to convert to cv::Matx.");
             return false;
+        }
 
-        auto outer_tuple = nanobind::cast<nanobind::tuple>(src);
-        if (outer_tuple.size() != rows) {
-            PyErr_SetString(PyExc_ValueError, "Expected a tuple of size 'rows' to convert to cv::Matx.");
+        Py_ssize_t outer_len = PySequence_Size(src.ptr());
+        if (outer_len != rows) {
+            PyErr_SetString(PyExc_ValueError, "Wrong number of rows to convert to cv::Matx.");
             return false;
         }
 
         try {
-            for (size_t i = 0; i < rows; ++i) {
-                auto inner_obj = outer_tuple[i];
-                if (!isinstance<sequence>(inner_obj)) {
-                    PyErr_SetString(PyExc_ValueError, "Expected inner elements to be sequences for cv::Matx.");
+            // Loop over the outer dimension
+            for (Py_ssize_t i = 0; i < outer_len; i++) {
+                nanobind::object row = nanobind::steal(PySequence_GetItem(src.ptr(), i));
+
+                // Check each row
+                if (!PySequence_Check(row.ptr())) {
+                    PyErr_SetString(PyExc_TypeError, "Expected each row to be a sequence.");
                     return false;
                 }
-                auto inner_tuple = nanobind::cast<nanobind::tuple>(inner_obj);
-                if (inner_tuple.size() != cols) {
-                    PyErr_SetString(PyExc_ValueError, "Expected inner tuples of size 'cols' to convert to cv::Matx.");
+
+                Py_ssize_t inner_len = PySequence_Size(row.ptr());
+                if (inner_len != cols) {
+                    PyErr_SetString(PyExc_ValueError, "Wrong number of columns in a row to convert to cv::Matx.");
                     return false;
                 }
-                for (size_t j = 0; j < cols; ++j) {
-                    value(i, j) = cast<ScalarTp>(inner_tuple[j]);
+
+                // Loop over each element in the row
+                for (Py_ssize_t j = 0; j < inner_len; j++) {
+                    nanobind::object item = nanobind::steal(PySequence_GetItem(row.ptr(), j));
+                    value(i, j) = nanobind::cast<ScalarTp>(item);
                 }
             }
-            DEBUG_CVNP("Leave from_python Type caster for cv::Matx");
             return true;
-        } catch (const std::exception &e) {
+        }
+        catch (const std::exception &e) {
             PyErr_SetString(PyExc_ValueError, e.what());
             return false;
         }
     }
 
-    // Conversion from C++ to Python (cv::Matx -> tuple)
+    // Conversion from C++ to Python (cv::Matx -> list-of-lists)
     static handle from_cpp(const MatxTp &value, rv_policy policy, cleanup_list *cleanup) noexcept {
-        DEBUG_CVNP("Enter from_cpp Type caster for cv::Matx");
         nanobind::list outer_list;
+
         for (size_t i = 0; i < rows; ++i) {
             nanobind::list inner_list;
             for (size_t j = 0; j < cols; ++j) {
                 inner_list.append(value(i, j));
             }
-            nanobind::tuple inner_tuple(inner_list);
-            outer_list.append(inner_tuple);
+            outer_list.append(inner_list);
         }
-        nanobind::tuple outer_tuple(outer_list);
-        DEBUG_CVNP("Leave from_cpp Type caster for cv::Matx");
-        return outer_tuple.release();
+        return outer_list.release();
     }
 };
 

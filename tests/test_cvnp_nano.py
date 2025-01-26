@@ -137,20 +137,47 @@ def test_matx_not_shared():
             ...
         };
 
-        mx_ns is published as a tuple[tuple[float]] in Python
+        mx_ns is published as a list[list[float]] in Python
     """
     # create object
     o = CvNp_TestHelper()
 
-    m_linked = o.mx_ns                   # Make a numpy array that is a copy of mx_ns *without* shared memory
-    assert matx_as_tuple_shape(m_linked) == (3, 2)      # check its shape
-    with pytest.raises(TypeError):
-        m_linked[1, 1] = 3               # a value change is forbidden on the Python side (this is a tuple!)
+    m_unlinked = o.mx_ns                   # Make a numpy array that is a copy of mx_ns *without* shared memory
+    assert matx_as_tuple_shape(m_unlinked) == (3, 2)      # check its shape
+
+    m_unlinked[1][1] = 0.0  # A change in Python
+    assert o.mx_ns[1][1] != 0.0  # is not visible from C++
 
     o.SetMX_ns(2, 1, 15)                               # A C++ change a value in the matrix
-    assert not are_float_close(m_linked[2][1], 15)  # is not visible from python,
-    m_linked = o.mx_ns                                 # but becomes visible after we re-create the numpy array from
-    assert are_float_close(m_linked[2][1], 15)      # the cv::Matx
+    assert not are_float_close(m_unlinked[2][1], 15)  # is not visible from python,
+    m_unlinked = o.mx_ns                                 # but becomes visible after we re-create the numpy array from
+    assert are_float_close(m_unlinked[2][1], 15)      # the cv::Matx
+
+    # Test set from a tuple
+    o.mx_ns = (
+        (1.0, 2.0),
+        (3.0, 4.0),
+        (5.0, 6.0)
+    )
+    assert o.mx_ns[2][1] == 6.0
+
+    # Test set from a list
+    l = [
+        [7.0, 8.0],
+        [9.0, 10.0],
+        [11.0, 12.0]
+    ]
+    o.mx_ns = l
+    assert o.mx_ns[1][1] == 10.0
+
+    # Test set from a numpy array
+    a = np.array([
+        [13.0, 14.0],
+        [15.0, 16.0],
+        [17.0, 18.0]
+    ], np.float32)
+    o.mx_ns = a
+    assert o.mx_ns[0][0] == 13.0
 
 
 def test_vec_not_shared():
