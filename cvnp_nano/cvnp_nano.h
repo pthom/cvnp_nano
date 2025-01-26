@@ -221,7 +221,6 @@ struct type_caster<cv::Mat_<_Tp>> : public type_caster<cv::Mat> // Inherit from 
 };
 
 
-
 // Type caster for cv::Vec
 // =======================
 template <typename _Tp, int cn>
@@ -231,23 +230,33 @@ struct type_caster<cv::Vec<_Tp, cn>>
     using ScalarTp = _Tp;
     static constexpr size_t size = cn;
 
-    NB_TYPE_CASTER(VecTp, const_name("tuple"));
+    NB_TYPE_CASTER(VecTp, const_name("list"));
 
-    // Conversion from Python to C++ (tuple -> cv::Vec)
+    // Conversion from Python to C++ (sequence (list|tuple|array) -> cv::Vec)
     bool from_python(handle src, uint8_t flags, cleanup_list *cleanup) noexcept {
         DEBUG_CVNP("Enter from_python Type caster for cv::Vec");
-        if (!isinstance<sequence>(src))
-            return false;
 
-        auto tuple = nanobind::cast<nanobind::tuple>(src);
-        if (tuple.size() != size) {
-            PyErr_SetString(PyExc_ValueError, "Expected a tuple of size N to convert to cv::Vec.");
+        // 1) Check for Python sequence-ness
+        if (!PySequence_Check(src.ptr())) {
+            PyErr_SetString(PyExc_TypeError, "Expected a sequence to convert to cv::Vec.");
             return false;
         }
 
+        // 2) Get sequence size
+        Py_ssize_t len = PySequence_Size(src.ptr());
+        if (len != size) {
+            PyErr_SetString(PyExc_ValueError, "Wrong number of elements to convert to cv::Vec.");
+            return false;
+        }
+
+        // 3) Extract each element
         try {
-            for (size_t i = 0; i < size; ++i) {
-                value[i] = cast<ScalarTp>(tuple[i]);
+            for (Py_ssize_t i = 0; i < len; i++) {
+                // GetItem() returns a new reference; wrap it in nanobind::steal
+                nanobind::object item = nanobind::steal(
+                    PySequence_GetItem(src.ptr(), i));
+                // Cast the item to your scalar type and store it
+                value[i] = nanobind::cast<ScalarTp>(item);
             }
             DEBUG_CVNP("Leave from_python Type caster for cv::Vec");
             return true;
@@ -257,16 +266,15 @@ struct type_caster<cv::Vec<_Tp, cn>>
         }
     }
 
-    // Conversion from C++ to Python (cv::Vec -> tuple)
+    // Conversion from C++ to Python (cv::Vec -> list)
     static handle from_cpp(const VecTp &value, rv_policy policy, cleanup_list *cleanup) noexcept {
         DEBUG_CVNP("Enter from_cpp Type caster for cv::Vec");
-        nanobind::list tuple_as_list;
+        nanobind::list as_list;
         for (size_t i = 0; i < size; ++i) {
-            tuple_as_list.append(value[i]);
+            as_list.append(value[i]);
         }
-        nanobind::tuple tuple(tuple_as_list);
         DEBUG_CVNP("Leave from_cpp Type caster for cv::Vec");
-        return tuple.release();
+        return as_list.release();
     }
 };
 

@@ -159,16 +159,33 @@ def test_vec_not_shared():
         cv::Vec3f v3_ns = {1.f, 2.f, 3.f};
         void SetV3_ns(int idx, float v) { v3_ns(idx) = v; }
 
-        v3_ns is published as a tuple[float] in Python
+        v3_ns is published as a list[float] in Python
     """
     o = CvNp_TestHelper()
     assert len(o.v3_ns) == 3
     assert o.v3_ns[0] == 1.
 
-    assert isinstance(o.v3_ns, tuple)
+    assert isinstance(o.v3_ns, list)
+
+    o.v3_ns[0] = 54.0         # A change from Python
+    assert o.v3_ns[0] != 0.0  # Is **not** visible from C++ (no shared memory)
 
     o.SetV3_ns(0, 10)        # A C++ change a value in the matrix
     assert o.v3_ns[0] == 10. # is visible from python if we re-create the tuple from the cv::Vec
+
+    # Test set from a tuple
+    o.v3_ns = (1.0, 2.0, 3.0)
+    assert o.v3_ns[2] == 3.0
+
+    # Test set from a list
+    l = [4.0, 5.0, 6.0]
+    o.v3_ns = l
+    assert o.v3_ns[1] == 5.0
+
+    # Test set from a numpy array
+    a = np.array([7.0, 8.0, 9.0], np.float32)
+    o.v3_ns = a
+    assert o.v3_ns[0] == 7.0
 
 
 def test_matx_roundtrip():
