@@ -514,11 +514,85 @@ def test_contiguous_check():
     m = np.zeros((10,10),dtype=np.uint8)
     cvnp_roundtrip(m)
 
-    # 2. Check that a non-contiguous matrix raises an error
+    # 2. Check that a non-contiguous matrix raises an error with helpful message
     full_matrix = np.ones([10, 10], np.float32)
     sub_matrix = full_matrix[1:5, 2:4]
-    with pytest.raises(TypeError):
-        cvnp_roundtrip(sub_matrix)
+    
+    # Verify error message is helpful (appears as warning due to nanobind's error handling)
+    with pytest.warns(Warning) as warning_list:
+        with pytest.raises(TypeError):
+            cvnp_roundtrip(sub_matrix)
+    
+    # Find the warning with helpful error message
+    warning_msg = None
+    for w in warning_list:
+        if "contiguous" in str(w.message).lower():
+            warning_msg = str(w.message)
+            break
+    
+    assert warning_msg is not None, "No warning about contiguous arrays found"
+    # Check that the error message contains helpful information
+    assert "contiguous" in warning_msg.lower()
+    assert "ascontiguousarray" in warning_msg.lower()
+    assert "Shape:" in warning_msg or "shape:" in warning_msg.lower()
+    
+    # 3. Test that the suggested fix actually works
+    contiguous_sub = np.ascontiguousarray(sub_matrix)
+    result = cvnp_roundtrip(contiguous_sub)
+    assert (result == contiguous_sub).all()
+
+
+def test_error_messages_helpful():
+    """Test that error messages provide useful debugging information"""
+    
+    # Test 1: Non-contiguous array error
+    # The detailed error message appears as a warning (due to nanobind's error handling)
+    full_matrix = np.ones([10, 10, 3], np.float32)
+    non_contiguous = full_matrix[::2, ::2, :]  # Non-contiguous
+    
+    # Check that the warning is issued with our helpful message
+    with pytest.warns(Warning) as warning_list:
+        with pytest.raises(TypeError):
+            cvnp_roundtrip(non_contiguous)
+    
+    # Find the warning message
+    warning_msg = None
+    for w in warning_list:
+        if "contiguous" in str(w.message).lower():
+            warning_msg = str(w.message)
+            break
+    
+    assert warning_msg is not None, "No warning with 'contiguous' found"
+    print(f"\n=== Non-contiguous array error message ===\n{warning_msg}")
+    
+    # Verify warning message contains helpful info
+    assert "contiguous" in warning_msg.lower()
+    assert "ascontiguousarray" in warning_msg.lower()
+    assert "Shape:" in warning_msg or "shape:" in warning_msg.lower()
+    assert "Strides:" in warning_msg or "strides:" in warning_msg.lower()
+    assert "Dtype:" in warning_msg or "dtype:" in warning_msg.lower()
+    
+    # Test 2: Wrong dimensionality error
+    arr_1d = np.array([1, 2, 3], dtype=np.float32)
+    
+    with pytest.warns(Warning) as warning_list:
+        with pytest.raises((TypeError, ValueError)):
+            cvnp_roundtrip(arr_1d)
+    
+    # Find the warning message
+    warning_msg = None
+    for w in warning_list:
+        if "dimension" in str(w.message).lower():
+            warning_msg = str(w.message)
+            break
+    
+    assert warning_msg is not None, "No warning with 'dimension' found"
+    print(f"\n=== Wrong dimensionality error message ===\n{warning_msg}")
+    
+    # Should mention dimension requirement and provide helpful hint
+    assert "dimension" in warning_msg.lower()
+    assert "Shape:" in warning_msg or "shape:" in warning_msg.lower()
+    assert "reshape" in warning_msg.lower()
 
 
 def test_multidim_3d_cpp_to_python():

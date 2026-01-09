@@ -681,6 +681,44 @@ namespace cvnp_nano
 
     namespace detail
     {
+        // Helper functions for error messages
+        inline std::string format_shape(const nanobind::ndarray<>& a)
+        {
+            std::string result = "(";
+            for (size_t i = 0; i < a.ndim(); ++i)
+            {
+                if (i > 0) result += ", ";
+                result += std::to_string(a.shape(i));
+            }
+            result += ")";
+            return result;
+        }
+
+        inline std::string format_strides(const nanobind::ndarray<>& a)
+        {
+            std::string result = "(";
+            for (size_t i = 0; i < a.ndim(); ++i)
+            {
+                if (i > 0) result += ", ";
+                result += std::to_string(a.stride(i));
+            }
+            result += ")";
+            return result;
+        }
+
+        inline std::string format_dtype(const nanobind::ndarray<>& a)
+        {
+            auto dtype = a.dtype();
+            if (dtype == nanobind::dtype<uint8_t>()) return "uint8";
+            if (dtype == nanobind::dtype<int8_t>()) return "int8";
+            if (dtype == nanobind::dtype<uint16_t>()) return "uint16";
+            if (dtype == nanobind::dtype<int16_t>()) return "int16";
+            if (dtype == nanobind::dtype<int32_t>()) return "int32";
+            if (dtype == nanobind::dtype<float>()) return "float32";
+            if (dtype == nanobind::dtype<double>()) return "float64";
+            return "unknown";
+        }
+
         // Translated from cv2_numpy.cpp in OpenCV source code
         // A custom allocator for cv::Mat that attaches an owner to the cv::Mat
         class CvnpAllocator : public cv::MatAllocator
@@ -900,7 +938,16 @@ namespace cvnp_nano
     inline bool is_array_contiguous(const nanobind::ndarray<>& a)
     {
         if (a.ndim() < 2)
-            throw std::invalid_argument("cvnp_nano only supports arrays with at least 2 dimensions");
+        {
+            std::string error_msg = 
+                "cvnp_nano only supports arrays with at least 2 dimensions.\n"
+                "Array info:\n"
+                "  Shape: " + detail::format_shape(a) + "\n"
+                "  Dtype: " + detail::format_dtype(a) + "\n"
+                "Hint: Reshape your array to have at least 2 dimensions.\n"
+                "  Example: arr.reshape((1, -1)) for row vector, arr.reshape((-1, 1)) for column vector";
+            throw std::invalid_argument(error_msg);
+        }
 
         if (a.ndim() == 2)
         {
@@ -934,7 +981,15 @@ namespace cvnp_nano
         bool is_contiguous = is_array_contiguous(a);
         bool is_not_empty = a.size() != 0;
         if (! is_contiguous && is_not_empty) {
-            throw std::invalid_argument("cvnp::nparray_to_mat / Only contiguous numpy arrays are supported. / Please use np.ascontiguousarray() to convert your matrix");
+            std::string error_msg = 
+                "cvnp_nano only supports contiguous numpy arrays.\n"
+                "Array info:\n"
+                "  Shape: " + detail::format_shape(a) + "\n"
+                "  Strides: " + detail::format_strides(a) + "\n"
+                "  Dtype: " + detail::format_dtype(a) + "\n"
+                "Hint: Use np.ascontiguousarray() to convert your array:\n"
+                "  contiguous_arr = np.ascontiguousarray(your_array)";
+            throw std::invalid_argument(error_msg);
         }
 
         int depth = detail::determine_cv_depth(a.dtype());
