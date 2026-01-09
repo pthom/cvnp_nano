@@ -703,7 +703,7 @@ namespace cvnp_nano
                 u->data = u->origdata = (uchar*)m.data;
                 u->size = m.total();
 
-                u->userdata = &owner;
+                u->userdata = owner.inc_ref().ptr();
                 u->refcount = 1;
 
 #ifdef CVNP_NANO_DEBUG_ALLOCATOR
