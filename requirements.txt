@@ -1,3 +1,4 @@
 nanobind
 numpy
 pytest
+opencv-python

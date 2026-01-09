@@ -893,6 +893,254 @@ def test_multidim_cpp_indexing_4d_roundtrip():
     assert o.get_4d_value(mat_roundtrip, 1, 1, 1, 1) == 888.0
 
 
+def test_opencv_operations_on_3d_arrays():
+    """Test that OpenCV functions work correctly on converted 3D arrays"""
+    import cv2
+    
+    import cvnp_nano_example as o
+    
+    # Create a 3D array that looks like an image (H, W, C)
+    img_array = np.random.randint(0, 255, size=(100, 120, 3), dtype=np.uint8)
+    
+    # Convert to C++ and back
+    img_roundtrip = cvnp_roundtrip(img_array)
+    
+    # Verify OpenCV can work with it
+    assert img_roundtrip.shape == (100, 120, 3)
+    assert img_roundtrip.dtype == np.uint8
+    
+    # Test Gaussian blur
+    blurred = cv2.GaussianBlur(img_roundtrip, (5, 5), 0)
+    assert blurred.shape == img_roundtrip.shape
+    assert blurred.dtype == img_roundtrip.dtype
+    
+    # Test color conversion
+    gray = cv2.cvtColor(img_roundtrip, cv2.COLOR_BGR2GRAY)
+    assert gray.shape == (100, 120)
+    
+    # Test that we can convert OpenCV results back to C++
+    blurred_back = cvnp_roundtrip(blurred)
+    assert (blurred_back == blurred).all()
+
+
+def test_opencv_realworld_pipeline():
+    """Test a realistic OpenCV processing pipeline with shared memory"""
+    import cv2
+    
+    import cvnp_nano_example as o
+    
+    # Create a synthetic image
+    height, width = 480, 640
+    img = np.zeros((height, width, 3), dtype=np.uint8)
+    
+    # Draw some shapes using OpenCV
+    cv2.circle(img, (width//2, height//2), 100, (255, 0, 0), -1)
+    cv2.rectangle(img, (50, 50), (200, 150), (0, 255, 0), 3)
+    cv2.line(img, (0, 0), (width, height), (0, 0, 255), 2)
+    
+    # Convert to C++ and back
+    img_cpp = cvnp_roundtrip(img)
+    
+    # Verify shapes are preserved
+    assert img_cpp.shape == (height, width, 3)
+    assert (img_cpp == img).all()
+    
+    # Apply OpenCV operations on the converted image
+    # 1. Blur
+    blurred = cv2.GaussianBlur(img_cpp, (15, 15), 0)
+    
+    # 2. Edge detection
+    gray = cv2.cvtColor(blurred, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, 50, 150)
+    
+    # 3. Convert edges back to 3-channel
+    edges_3ch = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+    
+    # Verify we can convert the final result back to C++
+    final_cpp = cvnp_roundtrip(edges_3ch)
+    assert final_cpp.shape == (height, width, 3)
+    assert final_cpp.dtype == np.uint8
+    
+    # Verify OpenCV operations chain correctly
+    assert blurred.shape == img_cpp.shape
+    assert edges.shape == (height, width)
+    assert edges_3ch.shape == (height, width, 3)
+
+
+def test_opencv_video_frame_processing():
+    """Simulate video frame processing workflow"""
+    import cv2
+    
+    # Simulate processing multiple video frames
+    num_frames = 10
+    height, width = 720, 1280
+    
+    for frame_idx in range(num_frames):
+        # Create a frame with varying content
+        frame = np.random.randint(0, 255, size=(height, width, 3), dtype=np.uint8)
+        
+        # Add frame number as text (simulate real video)
+        cv2.putText(frame, f"Frame {frame_idx}", (50, 50), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        
+        # Convert to C++ and back (simulate passing to C++ processing)
+        frame_cpp = cvnp_roundtrip(frame)
+        
+        # Apply some OpenCV operations
+        resized = cv2.resize(frame_cpp, (width//2, height//2))
+        
+        # Verify operations work
+        assert resized.shape == (height//2, width//2, 3)
+        assert resized.dtype == np.uint8
+        
+        # Simulate C++ modifying the frame
+        if frame_cpp.shape[0] > 100 and frame_cpp.shape[1] > 100:
+            # Set a marker pixel
+            frame_cpp[100, 100, :] = [255, 0, 255]
+            assert (frame_cpp[100, 100] == [255, 0, 255]).all()
+
+
+def test_multidim_large_arrays():
+    """Test conversion of large multidimensional arrays"""
+    import cvnp_nano_example as o
+    
+    # Test large 3D array (simulating HD video frame with multiple channels)
+    large_3d = np.random.rand(1080, 1920, 16).astype(np.float32)
+    large_3d_back = cvnp_roundtrip(large_3d)
+    
+    assert large_3d_back.shape == large_3d.shape
+    assert large_3d_back.dtype == large_3d.dtype
+    assert np.allclose(large_3d_back, large_3d)
+    
+    # Verify memory sharing for large arrays
+    large_3d_back[0, 0, 0] = 999.0
+    assert large_3d_back[0, 0, 0] == 999.0
+    
+    # Test large 4D array (simulating batch of images)
+    large_4d = np.random.rand(10, 64, 64, 32).astype(np.float32)
+    large_4d_back = cvnp_roundtrip(large_4d)
+    
+    assert large_4d_back.shape == large_4d.shape
+    assert large_4d_back.dtype == large_4d.dtype
+    assert np.allclose(large_4d_back, large_4d)
+
+
+def test_multidim_shape_edge_cases():
+    """Test edge cases for array shapes"""
+    
+    # Test minimum valid 3D array (1x1x1) - Note: single channel gets dropped!
+    tiny_3d = np.array([[[42.0]]], dtype=np.float32)
+    tiny_3d_back = cvnp_roundtrip(tiny_3d)
+    # Single channel 3D arrays become 2D (OpenCV convention)
+    assert tiny_3d_back.shape == (1, 1), "Single channel 3D should become 2D"
+    assert tiny_3d_back[0, 0] == 42.0
+    
+    # Test 3D with 2+ channels to preserve 3D shape
+    tiny_3d_multi = np.array([[[1.0, 2.0]]], dtype=np.float32)
+    tiny_3d_multi_back = cvnp_roundtrip(tiny_3d_multi)
+    assert tiny_3d_multi_back.shape == (1, 1, 2)
+    
+    # Test 3D with one large dimension
+    skinny_3d = np.random.rand(1000, 1, 3).astype(np.float32)
+    skinny_3d_back = cvnp_roundtrip(skinny_3d)
+    assert skinny_3d_back.shape == (1000, 1, 3)
+    
+    # Test 3D with many channels
+    many_channels = np.random.rand(10, 10, 64).astype(np.float32)
+    many_channels_back = cvnp_roundtrip(many_channels)
+    assert many_channels_back.shape == (10, 10, 64)
+    
+    # Test 4D minimum (1x1x1x1)
+    tiny_4d = np.array([[[[1.0]]]], dtype=np.float32)
+    tiny_4d_back = cvnp_roundtrip(tiny_4d)
+    assert tiny_4d_back.shape == (1, 1, 1, 1)
+    assert tiny_4d_back[0, 0, 0, 0] == 1.0
+    
+    # Test 5D with mixed dimensions
+    mixed_5d = np.random.rand(2, 1, 3, 1, 4).astype(np.float64)
+    mixed_5d_back = cvnp_roundtrip(mixed_5d)
+    assert mixed_5d_back.shape == (2, 1, 3, 1, 4)
+    assert mixed_5d_back.dtype == np.float64
+
+
+def test_multidim_cpp_operations_preserve_structure():
+    """Test that C++ operations maintain array structure correctly"""
+    import cvnp_nano_example as o
+    
+    # Create and modify 3D array through C++
+    arr_3d = np.zeros((5, 6, 7), dtype=np.float32)
+    
+    # Set multiple values through C++
+    for i in range(5):
+        for j in range(6):
+            for k in range(7):
+                value = float(i * 100 + j * 10 + k)
+                o.set_3d_value(arr_3d, i, j, k, value)
+    
+    # Verify all values are correct
+    for i in range(5):
+        for j in range(6):
+            for k in range(7):
+                expected = float(i * 100 + j * 10 + k)
+                assert arr_3d[i, j, k] == expected
+                assert o.get_3d_value(arr_3d, i, j, k) == expected
+    
+    # Create and modify 4D array through C++
+    arr_4d = np.zeros((3, 4, 5, 6), dtype=np.float32)
+    
+    # Set corner values
+    test_positions = [
+        (0, 0, 0, 0, 1.0),
+        (2, 3, 4, 5, 999.0),
+        (1, 2, 3, 4, 555.0),
+        (0, 3, 0, 5, 777.0),
+    ]
+    
+    for i, j, k, l, val in test_positions:
+        o.set_4d_value(arr_4d, i, j, k, l, val)
+    
+    for i, j, k, l, expected in test_positions:
+        assert arr_4d[i, j, k, l] == expected
+        assert o.get_4d_value(arr_4d, i, j, k, l) == expected
+
+
+def test_multidim_dtype_preservation_detailed():
+    """Test that dtypes are preserved precisely through conversions"""
+    
+    dtypes_to_test = [
+        (np.uint8, 0, 255),
+        (np.int8, -128, 127),
+        (np.uint16, 0, 65535),
+        (np.int16, -32768, 32767),
+        (np.int32, -2147483648, 2147483647),
+        (np.float32, -1e6, 1e6),
+        (np.float64, -1e10, 1e10),
+    ]
+    
+    for dtype, min_val, max_val in dtypes_to_test:
+        # Test 3D
+        if dtype in [np.float32, np.float64]:
+            arr_3d = np.random.uniform(min_val, max_val, size=(10, 10, 10)).astype(dtype)
+        else:
+            arr_3d = np.random.randint(max(0, min_val), min(max_val, 1000), 
+                                       size=(10, 10, 10), dtype=dtype)
+        
+        arr_3d_back = cvnp_roundtrip(arr_3d)
+        assert arr_3d_back.dtype == dtype, f"3D dtype mismatch for {dtype}"
+        assert (arr_3d_back == arr_3d).all(), f"3D values changed for {dtype}"
+        
+        # Test 4D
+        if dtype in [np.float32, np.float64]:
+            arr_4d = np.random.uniform(min_val/10, max_val/10, size=(5, 5, 5, 5)).astype(dtype)
+        else:
+            arr_4d = np.random.randint(max(0, min_val), min(max_val, 100), 
+                                       size=(5, 5, 5, 5), dtype=dtype)
+        
+        arr_4d_back = cvnp_roundtrip(arr_4d)
+        assert arr_4d_back.dtype == dtype, f"4D dtype mismatch for {dtype}"
+        assert (arr_4d_back == arr_4d).all(), f"4D values changed for {dtype}"
+
+
 def main():
     test_mat_shared()
     test_mat__shared()
