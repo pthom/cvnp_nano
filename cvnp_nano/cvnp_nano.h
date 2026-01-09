@@ -787,56 +787,85 @@ namespace cvnp_nano
         {
             if (a.ndim() < 2)
                 throw std::invalid_argument("determine_cv_type needs at least two dimensions");
-            if (a.ndim() > 3)
-                throw std::invalid_argument("determine_cv_type needs at most three dimensions");
+            
+            // For 2D arrays, single channel
             if (a.ndim() == 2)
                 return CV_MAKETYPE(depth, 1);
-
-            //We now know that shape.size() == 3
-            int nb_channels = a.shape(2);
-            return CV_MAKETYPE(depth, nb_channels);
-        }
-
-        inline cv::Size determine_cv_size(const nanobind::ndarray<>& a)
-        {
-            if (a.ndim() < 2)
-                throw std::invalid_argument("determine_cv_size needs at least two dimensions");
-            return cv::Size(static_cast<int>(a.shape(1)), static_cast<int>(a.shape(0)));
+            // For 3D arrays, treat last dimension as channels (for RGB images, etc.)
+            else if (a.ndim() == 3)
+            {
+                int nb_channels = static_cast<int>(a.shape(2));
+                return CV_MAKETYPE(depth, nb_channels);
+            }
+            // For 4D+ arrays, single channel (true multi-dimensional)
+            else
+            {
+                return CV_MAKETYPE(depth, 1);
+            }
         }
 
         inline std::vector<std::size_t> determine_shape(const cv::Mat& m)
         {
-            if (m.channels() == 1) {
+            if (m.dims > 2) {
+                std::vector<std::size_t> shape;
+                for (int i = 0; i < m.dims; ++i)
+                    shape.push_back(static_cast<size_t>(m.size[i]));
+
+                if (m.channels() > 1)
+                    shape.push_back(static_cast<size_t>(m.channels()));
+                
+                return shape;
+            }
+            else {
+                if (m.channels() == 1) {
+                    return {
+                        static_cast<size_t>(m.rows),
+                        static_cast<size_t>(m.cols)
+                    };
+                }
                 return {
-                    static_cast<size_t>(m.rows)
-                    , static_cast<size_t>(m.cols)
+                    static_cast<size_t>(m.rows),
+                    static_cast<size_t>(m.cols),
+                    static_cast<size_t>(m.channels())
                 };
             }
-            return {
-                static_cast<size_t>(m.rows)
-                , static_cast<size_t>(m.cols)
-                , static_cast<size_t>(m.channels())
-            };
         }
 
         inline std::vector<int64_t> determine_strides(const cv::Mat& m) {
-            // Return strides in nb element (not bytes)
-            if (m.channels() == 1) {
+            if (m.dims > 2) {
+                std::vector<int64_t> strides;
+                for (int i = 0; i < m.dims; ++i)
+                    strides.push_back(static_cast<int64_t>(m.step[i] / m.elemSize1()));
+
+                if (m.channels() > 1)
+                    strides.push_back(1);
+
+                return strides;
+            }
+            else {
+                // Return strides in nb element (not bytes)
+                if (m.channels() == 1) {
+                    return {
+                        static_cast<int64_t>(m.step[0] / m.elemSize1()), // row stride
+                        static_cast<int64_t>(m.step[1] / m.elemSize1())  // column stride
+                    };
+                }
                 return {
                     static_cast<int64_t>(m.step[0] / m.elemSize1()), // row stride
-                    static_cast<int64_t>(m.step[1] / m.elemSize1())  // column stride
+                    static_cast<int64_t>(m.step[1] / m.elemSize1()), // column stride
+                    static_cast<int64_t>(1) // channel stride
                 };
             }
-            return {
-                static_cast<int64_t>(m.step[0] / m.elemSize1()), // row stride
-                static_cast<int64_t>(m.step[1] / m.elemSize1()), // column stride
-                static_cast<int64_t>(1) // channel stride
-            };
         }
 
         inline int determine_ndim(const cv::Mat& m)
         {
-            return m.channels() == 1 ? 2 : 3;
+            if (m.dims > 2) {
+                return m.channels() == 1 ? m.dims : m.dims + 1;
+            }
+            else {
+                return m.channels() == 1 ? 2 : 3;
+            }
         }
     } // namespace detail
 
@@ -870,16 +899,30 @@ namespace cvnp_nano
 
     inline bool is_array_contiguous(const nanobind::ndarray<>& a)
     {
-        if (a.ndim() < 2 || a.ndim() > 3)
-            throw std::invalid_argument("cvnp_nano only supports 2D or 3D numpy arrays");
+        if (a.ndim() < 2)
+            throw std::invalid_argument("cvnp_nano only supports arrays with at least 2 dimensions");
 
         if (a.ndim() == 2)
         {
             return a.stride(0) == a.shape(1) && a.stride(1) == 1;
         }
+        else if (a.ndim() == 3)
+        {
+            return a.stride(0) == a.shape(1) * a.shape(2) && 
+                   a.stride(1) == a.shape(2) && 
+                   a.stride(2) == 1;
+        }
         else
         {
-            return a.stride(0) == a.shape(1) * a.shape(2) && a.stride(1) == a.shape(2) && a.stride(2) == 1;
+            // For higher dimensions, check C-contiguous layout
+            int64_t expected_stride = 1;
+            for (int i = a.ndim() - 1; i >= 0; --i)
+            {
+                if (a.stride(i) != expected_stride)
+                    return false;
+                expected_stride *= a.shape(i);
+            }
+            return true;
         }
     }
 
@@ -896,8 +939,30 @@ namespace cvnp_nano
 
         int depth = detail::determine_cv_depth(a.dtype());
         int type = detail::determine_cv_type(a, depth);
-        cv::Size size = detail::determine_cv_size(a);
-        cv::Mat m(size, type, is_not_empty ? a.data() : nullptr);
+        
+        cv::Mat m;
+        
+        // Use multi-dimensional constructor for all cases
+        // For 2D/3D arrays: create 2D Mat (ndims=2) with channels encoded in type
+        // For 4D+ arrays: create true multi-dimensional Mat
+        if (a.ndim() <= 3)
+        {
+            // 2D or 3D (as 2D with channels): use first 2 dimensions
+            int sizes[2] = {
+                static_cast<int>(a.shape(0)),  // rows
+                static_cast<int>(a.shape(1))   // cols
+            };
+            m = cv::Mat(2, sizes, type, is_not_empty ? a.data() : nullptr);
+        }
+        else
+        {
+            // True multi-dimensional (4D+)
+            std::vector<int> sizes;
+            for (size_t i = 0; i < a.ndim(); ++i)
+                sizes.push_back(static_cast<int>(a.shape(i)));
+            
+            m = cv::Mat(static_cast<int>(sizes.size()), sizes.data(), type, is_not_empty ? a.data() : nullptr);
+        }
 
         if (is_not_empty)
             detail::CvnpAllocator::attach_nparray(m, owner);

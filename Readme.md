@@ -3,6 +3,7 @@
 cvnp_nano provides automatic casts between OpenCV matrices and numpy arrays when using nanobind:
 
 * `cv::Mat` and `cv::Mat_<Tp>`: are transformed to numpy array *with shared memory* (i.e. modification to matrices elements made from python are immediately visible to C++, and vice-versa).
+* **Multidimensional arrays** (dims > 2) are supported with shared memory. See the [Multidimensional Arrays](#multidimensional-arrays-dims--2) section for important details about 3D vs 4D+ arrays.
 * Sub-matrices / non contiguous matrices are not supported: 
   * for numpy arrays, you will need to transform them to a contiguous array before being shared to C++
   * for cv::Mat, you can transform them using `cv::Mat::clone()` before sharing them to python
@@ -27,6 +28,53 @@ git submodule add https://github.com/pthom/cvnp_nano.git
 ```cpp
 #include "cvnp_nano/cvnp_nano.h"
 ```
+
+
+## Multidimensional Arrays (dims > 2)
+
+cvnp_nano supports multidimensional arrays with shared memory, but there's an important distinction between 3D and 4D+ arrays due to OpenCV's channel representation:
+
+### 3D Arrays: Channel Representation
+
+**3D NumPy arrays are converted to 2D OpenCV Mats with channels** to maintain compatibility with traditional image processing workflows (e.g., RGB images):
+
+- A `(H, W, C)` NumPy array becomes a 2D `cv::Mat` with:
+  - `mat.rows = H`
+  - `mat.cols = W`
+  - `mat.channels() = C`
+  - `mat.dims = 2` (not 3!)
+
+**Accessing elements:** Use `mat.ptr<T>(i, j)[k]` to access element at position `(i, j, k)`. The `ptr<T>(i, j)` returns a pointer to row `i`, column `j`, and `[k]` indexes into the `k`-th channel. See [example/cvnp_nano_example.cpp](example/cvnp_nano_example.cpp) functions `get_3d_value()` and `set_3d_value()` for reference.
+
+### 4D+ Arrays: True Multidimensional Mats
+
+**4D and higher dimensional NumPy arrays become true multidimensional OpenCV Mats:**
+
+- A `(D1, D2, D3, D4)` NumPy array becomes a 4D `cv::Mat` with:
+  - `mat.dims = 4`
+  - `mat.size[0] = D1`, `mat.size[1] = D2`, `mat.size[2] = D3`, `mat.size[3] = D4`
+  - `mat.channels() = 1`
+
+**Simpler:** Indexing is straightforward - you can use OpenCV's `mat.at<T>(int* idx)` directly! See [example/cvnp_nano_example.cpp](example/cvnp_nano_example.cpp) functions `get_4d_value()` and `set_4d_value()` for reference.
+
+### Example: Accessing Multidimensional Array Elements
+
+Both 3D and 4D+ arrays have clean, simple access patterns:
+
+```cpp
+// 3D array indexing (2D Mat with channels - use mat.ptr())
+float get_3d_value(const cv::Mat& mat, int i, int j, int k) {
+    return mat.ptr<float>(i, j)[k];  // Get pointer to (i,j), index [k] for channel
+}
+
+// 4D array indexing (true multi-dimensional Mat - use mat.at())
+float get_4d_value(const cv::Mat& mat, int i, int j, int k, int l) {
+    int idx[] = {i, j, k, l};
+    return mat.at<float>(idx);  // Direct multi-dimensional indexing
+}
+```
+
+**Key insight:** While 3D arrays become 2D Mats with channels, `mat.ptr<T>(i, j)` gives you a pointer to position (i, j), making channel access simple. 4D+ arrays remain true multi-dimensional Mats, so `mat.at<T>(int* idx)` works directly.
 
 
 

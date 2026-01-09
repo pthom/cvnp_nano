@@ -520,6 +520,379 @@ def test_contiguous_check():
     with pytest.raises(TypeError):
         cvnp_roundtrip(sub_matrix)
 
+
+def test_multidim_3d_cpp_to_python():
+    """Test 3D cv::Mat conversion from C++ to Python"""
+    from cvnp_nano_example import create_3d_mat, get_mat_shape
+    
+    # Create 3D mat in C++ (4x5x6)
+    mat_3d = create_3d_mat()
+    
+    # Check shape
+    assert mat_3d.shape == (4, 5, 6)
+    assert mat_3d.dtype == np.float32
+    
+    # Check values (test pattern: i*100 + j*10 + k)
+    # These should match the C++ creation logic
+    assert mat_3d[0, 0, 0] == 0.0
+    assert mat_3d[1, 2, 3] == 123.0
+    assert mat_3d[3, 4, 5] == 345.0
+    assert mat_3d[2, 1, 4] == 214.0
+    
+    # Test memory sharing: modify from Python and verify change persists
+    original_val = mat_3d[1, 1, 1]
+    mat_3d[1, 1, 1] = 888.0
+    assert mat_3d[1, 1, 1] == 888.0
+    
+    mat_3d[2, 3, 4] = 999.0
+    assert mat_3d[2, 3, 4] == 999.0
+
+
+def test_multidim_4d_cpp_to_python():
+    """Test 4D cv::Mat conversion from C++ to Python"""
+    from cvnp_nano_example import create_4d_mat
+    
+    # Create 4D mat in C++ (3x4x5x2)
+    mat_4d = create_4d_mat()
+    
+    # Check shape
+    assert mat_4d.shape == (3, 4, 5, 2)
+    assert mat_4d.dtype == np.float32
+    
+    # Check values (sequential 0, 1, 2, ...)
+    assert mat_4d[0, 0, 0, 0] == 0.0
+    assert mat_4d[0, 0, 0, 1] == 1.0
+    assert mat_4d[0, 0, 1, 0] == 2.0
+    
+    # Test modification from Python
+    mat_4d[1, 2, 3, 1] = 777.0
+    assert mat_4d[1, 2, 3, 1] == 777.0
+
+
+def test_multidim_5d_cpp_to_python():
+    """Test 5D cv::Mat conversion from C++ to Python"""
+    from cvnp_nano_example import create_5d_mat
+    
+    # Create 5D mat in C++ (2x3x4x2x2)
+    mat_5d = create_5d_mat()
+    
+    # Check shape
+    assert mat_5d.shape == (2, 3, 4, 2, 2)
+    assert mat_5d.dtype == np.float64
+    
+    # Check values (sequential 0, 0.5, 1.0, 1.5, ...)
+    assert mat_5d[0, 0, 0, 0, 0] == 0.0
+    assert mat_5d[0, 0, 0, 0, 1] == 0.5
+    assert mat_5d[0, 0, 0, 1, 0] == 1.0
+    
+    # Test modification
+    mat_5d[1, 2, 3, 1, 0] = 12345.0
+    assert mat_5d[1, 2, 3, 1, 0] == 12345.0
+
+
+def test_multidim_python_to_cpp():
+    """Test multidimensional numpy array to cv::Mat conversion"""
+    from cvnp_nano_example import get_mat_shape, inspect_multidim
+    
+    # Test 3D array
+    arr_3d = np.zeros((3, 4, 5), dtype=np.float32)
+    arr_3d[1, 2, 3] = 42.0
+    shape_3d = get_mat_shape(arr_3d)
+    assert shape_3d == [3, 4, 5]
+    
+    # Test 4D array
+    arr_4d = np.ones((2, 3, 4, 5), dtype=np.int32)
+    arr_4d[1, 1, 1, 1] = 99
+    shape_4d = get_mat_shape(arr_4d)
+    assert shape_4d == [2, 3, 4, 5]
+    
+    # Test 5D array
+    arr_5d = np.arange(2*3*4*2*2, dtype=np.float64).reshape(2, 3, 4, 2, 2)
+    shape_5d = get_mat_shape(arr_5d)
+    assert shape_5d == [2, 3, 4, 2, 2]
+
+
+def test_multidim_roundtrip():
+    """Test roundtrip conversion for multidimensional arrays"""
+    
+    # Test 3D array roundtrip
+    arr_3d = np.random.rand(4, 5, 6).astype(np.float32)
+    arr_3d[2, 3, 4] = 123.456
+    arr_3d_back = cvnp_roundtrip(arr_3d)
+    assert arr_3d.shape == arr_3d_back.shape
+    assert arr_3d.dtype == arr_3d_back.dtype
+    assert np.allclose(arr_3d, arr_3d_back)
+    
+    # Test 4D array roundtrip
+    arr_4d = np.random.rand(3, 4, 5, 2).astype(np.float64)
+    arr_4d[1, 2, 3, 1] = 987.654
+    arr_4d_back = cvnp_roundtrip(arr_4d)
+    assert arr_4d.shape == arr_4d_back.shape
+    assert arr_4d.dtype == arr_4d_back.dtype
+    assert np.allclose(arr_4d, arr_4d_back)
+    
+    # Test 5D array roundtrip
+    arr_5d = np.arange(2*3*4*2*2, dtype=np.int32).reshape(2, 3, 4, 2, 2)
+    arr_5d_back = cvnp_roundtrip(arr_5d)
+    assert arr_5d.shape == arr_5d_back.shape
+    assert arr_5d.dtype == arr_5d_back.dtype
+    assert (arr_5d == arr_5d_back).all()
+
+
+def test_multidim_memory_sharing():
+    """Test that memory is properly shared for multidimensional arrays"""
+    from cvnp_nano_example import create_3d_mat
+    
+    # Get 3D mat from C++
+    mat = create_3d_mat()
+    original_value = mat[1, 2, 3]
+    
+    # Create a view
+    mat_view = mat
+    
+    # Modify through view
+    mat_view[1, 2, 3] = 555.0
+    
+    # Check both references see the change
+    assert mat[1, 2, 3] == 555.0
+    assert mat_view[1, 2, 3] == 555.0
+    
+    # Modify through original
+    mat[1, 2, 3] = 666.0
+    assert mat_view[1, 2, 3] == 666.0
+
+
+def test_multidim_different_types():
+    """Test multidimensional arrays with different dtypes"""
+    
+    types_to_test = [
+        (np.uint8, 'uint8'),
+        (np.int8, 'int8'),
+        (np.uint16, 'uint16'),
+        (np.int16, 'int16'),
+        (np.int32, 'int32'),
+        (np.float32, 'float32'),
+        (np.float64, 'float64'),
+    ]
+    
+    for dtype, dtype_name in types_to_test:
+        # Test 3D array
+        arr_3d = np.zeros((3, 4, 5), dtype=dtype)
+        arr_3d[1, 2, 3] = 42
+        arr_3d_back = cvnp_roundtrip(arr_3d)
+        assert arr_3d.shape == arr_3d_back.shape, f"Shape mismatch for {dtype_name}"
+        assert arr_3d.dtype == arr_3d_back.dtype, f"Dtype mismatch for {dtype_name}"
+        assert (arr_3d == arr_3d_back).all(), f"Value mismatch for {dtype_name}"
+        
+        # Test 4D array
+        arr_4d = np.ones((2, 3, 4, 2), dtype=dtype)
+        arr_4d_back = cvnp_roundtrip(arr_4d)
+        assert arr_4d.shape == arr_4d_back.shape, f"Shape mismatch for {dtype_name} (4D)"
+        assert arr_4d.dtype == arr_4d_back.dtype, f"Dtype mismatch for {dtype_name} (4D)"
+
+
+def test_multidim_contiguous_check():
+    """Test that non-contiguous multidimensional arrays are rejected"""
+    
+    # Create a non-contiguous 3D array
+    full_array = np.ones((10, 10, 10), dtype=np.float32)
+    sub_array = full_array[::2, ::2, ::2]  # Non-contiguous
+    
+    assert not sub_array.flags['C_CONTIGUOUS']
+    
+    with pytest.raises(TypeError):
+        cvnp_roundtrip(sub_array)
+    
+    # But contiguous copy should work
+    contiguous_copy = np.ascontiguousarray(sub_array)
+    result = cvnp_roundtrip(contiguous_copy)
+    assert (result == contiguous_copy).all()
+
+
+def test_multidim_cpp_indexing_3d():
+    """Test that C++ and Python indexing match for 3D arrays"""
+    import cvnp_nano_example as o
+    
+    # Create 3D mat from C++ (shape 4x5x6, filled with pattern i*100 + j*10 + k)
+    mat_3d = o.create_3d_mat()
+    assert mat_3d.shape == (4, 5, 6)
+    assert mat_3d.dtype == np.float32
+    
+    # Verify multiple indices match between C++ and Python
+    test_indices = [
+        (0, 0, 0),  # First element
+        (1, 2, 3),  # Middle element
+        (3, 4, 5),  # Last element
+        (2, 3, 4),  # Random element
+        (0, 4, 5),  # Edge case
+        (3, 0, 0),  # Another edge
+    ]
+    
+    for i, j, k in test_indices:
+        expected = i * 100 + j * 10 + k
+        python_value = mat_3d[i, j, k]
+        cpp_value = o.get_3d_value(mat_3d, i, j, k)
+        
+        assert python_value == expected, f"Python indexing wrong at [{i},{j},{k}]: got {python_value}, expected {expected}"
+        assert cpp_value == expected, f"C++ indexing wrong at [{i},{j},{k}]: got {cpp_value}, expected {expected}"
+        assert python_value == cpp_value, f"C++/Python mismatch at [{i},{j},{k}]: C++={cpp_value}, Python={python_value}"
+
+
+def test_multidim_cpp_set_3d():
+    """Test that C++ set_3d_value works correctly and is visible in Python"""
+    import cvnp_nano_example as o
+    
+    # Create empty 3D array from Python
+    arr = np.zeros((4, 5, 6), dtype=np.float32)
+    
+    # Set values through C++
+    test_data = [
+        (0, 0, 0, 100.0),
+        (1, 2, 3, 123.0),
+        (3, 4, 5, 345.0),
+        (2, 1, 4, 214.0),
+    ]
+    
+    for i, j, k, value in test_data:
+        o.set_3d_value(arr, i, j, k, value)
+    
+    # Verify in Python
+    for i, j, k, expected_value in test_data:
+        python_value = arr[i, j, k]
+        cpp_value = o.get_3d_value(arr, i, j, k)
+        
+        assert python_value == expected_value, f"Python read wrong at [{i},{j},{k}]: got {python_value}, expected {expected_value}"
+        assert cpp_value == expected_value, f"C++ read wrong at [{i},{j},{k}]: got {cpp_value}, expected {expected_value}"
+
+
+def test_multidim_cpp_indexing_roundtrip():
+    """Test that C++ indexing still works after roundtrip through Python"""
+    import cvnp_nano_example as o
+    
+    # Create 3D mat in C++
+    mat_original = o.create_3d_mat()
+    
+    # Roundtrip through Python
+    mat_roundtrip = cvnp_roundtrip(mat_original)
+    
+    # Verify shape and dtype preserved
+    assert mat_roundtrip.shape == (4, 5, 6)
+    assert mat_roundtrip.dtype == np.float32
+    
+    # Test that C++ indexing still works correctly after roundtrip
+    test_indices = [
+        (0, 0, 0),
+        (1, 2, 3),
+        (3, 4, 5),
+        (2, 3, 1),
+    ]
+    
+    for i, j, k in test_indices:
+        expected = i * 100 + j * 10 + k
+        
+        # C++ should still be able to read correct values after roundtrip
+        cpp_value = o.get_3d_value(mat_roundtrip, i, j, k)
+        python_value = mat_roundtrip[i, j, k]
+        
+        assert cpp_value == expected, f"C++ indexing failed after roundtrip at [{i},{j},{k}]: got {cpp_value}, expected {expected}"
+        assert python_value == expected, f"Python indexing failed after roundtrip at [{i},{j},{k}]: got {python_value}, expected {expected}"
+    
+    # Test that C++ set still works after roundtrip
+    o.set_3d_value(mat_roundtrip, 1, 1, 1, 999.0)
+    assert mat_roundtrip[1, 1, 1] == 999.0
+    assert o.get_3d_value(mat_roundtrip, 1, 1, 1) == 999.0
+
+
+def test_multidim_cpp_indexing_4d():
+    """Test that C++ and Python indexing match for 4D arrays (simpler than 3D!)"""
+    import cvnp_nano_example as o
+    
+    # Create 4D mat from C++ (shape 3x4x5x2)
+    mat_4d = o.create_4d_mat()
+    assert mat_4d.shape == (3, 4, 5, 2)
+    assert mat_4d.dtype == np.float32
+    
+    # 4D arrays are straightforward - they remain true multi-dimensional Mats
+    # No channel confusion like with 3D arrays!
+    
+    # Verify indices match between C++ and Python
+    test_indices = [
+        (0, 0, 0, 0),  # First element (value = 0)
+        (0, 0, 0, 1),  # Second element (value = 1)
+        (0, 0, 1, 0),  # Third row start (value = 2)
+        (1, 2, 3, 1),  # Middle element
+        (2, 3, 4, 1),  # Last element
+    ]
+    
+    for i, j, k, l in test_indices:
+        python_value = mat_4d[i, j, k, l]
+        cpp_value = o.get_4d_value(mat_4d, i, j, k, l)
+        
+        assert python_value == cpp_value, f"C++/Python mismatch at [{i},{j},{k},{l}]: C++={cpp_value}, Python={python_value}"
+
+
+def test_multidim_cpp_set_4d():
+    """Test that C++ set_4d_value works correctly and is visible in Python"""
+    import cvnp_nano_example as o
+    
+    # Create empty 4D array from Python
+    arr = np.zeros((3, 4, 5, 2), dtype=np.float32)
+    
+    # Set values through C++
+    test_data = [
+        (0, 0, 0, 0, 100.0),
+        (1, 2, 3, 1, 999.0),
+        (2, 3, 4, 1, 777.0),
+        (0, 1, 2, 0, 555.0),
+    ]
+    
+    for i, j, k, l, value in test_data:
+        o.set_4d_value(arr, i, j, k, l, value)
+    
+    # Verify in Python
+    for i, j, k, l, expected_value in test_data:
+        python_value = arr[i, j, k, l]
+        cpp_value = o.get_4d_value(arr, i, j, k, l)
+        
+        assert python_value == expected_value, f"Python read wrong at [{i},{j},{k},{l}]: got {python_value}, expected {expected_value}"
+        assert cpp_value == expected_value, f"C++ read wrong at [{i},{j},{k},{l}]: got {cpp_value}, expected {expected_value}"
+
+
+def test_multidim_cpp_indexing_4d_roundtrip():
+    """Test that 4D indexing works after roundtrip (should be simple, no channel issues)"""
+    import cvnp_nano_example as o
+    
+    # Create 4D mat in C++
+    mat_original = o.create_4d_mat()
+    
+    # Roundtrip through Python
+    mat_roundtrip = cvnp_roundtrip(mat_original)
+    
+    # Verify shape and dtype preserved
+    assert mat_roundtrip.shape == (3, 4, 5, 2)
+    assert mat_roundtrip.dtype == np.float32
+    
+    # Test that C++ indexing still works correctly after roundtrip
+    # Unlike 3D arrays, 4D arrays don't have the channel representation complexity
+    test_indices = [
+        (0, 0, 0, 0),
+        (1, 2, 3, 1),
+        (2, 3, 4, 1),
+        (0, 1, 2, 0),
+    ]
+    
+    for i, j, k, l in test_indices:
+        cpp_value = o.get_4d_value(mat_roundtrip, i, j, k, l)
+        python_value = mat_roundtrip[i, j, k, l]
+        
+        assert cpp_value == python_value, f"Indexing mismatch after roundtrip at [{i},{j},{k},{l}]: C++={cpp_value}, Python={python_value}"
+    
+    # Test that C++ set still works after roundtrip
+    o.set_4d_value(mat_roundtrip, 1, 1, 1, 1, 888.0)
+    assert mat_roundtrip[1, 1, 1, 1] == 888.0
+    assert o.get_4d_value(mat_roundtrip, 1, 1, 1, 1) == 888.0
+
+
 def main():
     test_mat_shared()
     test_mat__shared()
@@ -539,6 +912,16 @@ def main():
 
     test_short_lived_matx()
     test_matx_roundtrip()
+
+    # Multidimensional array tests
+    test_multidim_3d_cpp_to_python()
+    test_multidim_4d_cpp_to_python()
+    test_multidim_5d_cpp_to_python()
+    test_multidim_python_to_cpp()
+    test_multidim_roundtrip()
+    test_multidim_memory_sharing()
+    test_multidim_different_types()
+    test_multidim_contiguous_check()
 
     from cvnp_nano_example import print_types_synonyms  # noqa
     print("List of types synonyms:")

@@ -148,6 +148,177 @@ cv::Matx21d RoundTripMatx21d(cv::Matx21d & m)
 }
 
 
+// Multidimensional array test functions
+// ======================================
+
+// Create a 3D single-channel Mat (e.g., 4x5x6)
+cv::Mat create_3d_mat()
+{
+    int sizes[] = {4, 5, 6};
+    cv::Mat mat(3, sizes, CV_32F);
+    
+    // Fill with test pattern: value = i*100 + j*10 + k
+    for (int i = 0; i < sizes[0]; ++i) {
+        for (int j = 0; j < sizes[1]; ++j) {
+            for (int k = 0; k < sizes[2]; ++k) {
+                int idx[] = {i, j, k};
+                mat.at<float>(idx) = static_cast<float>(i * 100 + j * 10 + k);
+            }
+        }
+    }
+    return mat;
+}
+
+// Create a 4D single-channel Mat (e.g., 3x4x5x2)
+cv::Mat create_4d_mat()
+{
+    int sizes[] = {3, 4, 5, 2};
+    cv::Mat mat(4, sizes, CV_32F);
+    
+    // Fill with test pattern
+    float value = 0.0f;
+    float* data = (float*)mat.data;
+    for (int i = 0; i < mat.total(); ++i) {
+        data[i] = value;
+        value += 1.0f;
+    }
+    return mat;
+}
+
+// Create a 5D single-channel Mat (e.g., 2x3x4x2x2)
+cv::Mat create_5d_mat()
+{
+    int sizes[] = {2, 3, 4, 2, 2};
+    cv::Mat mat(5, sizes, CV_64F);
+    
+    // Fill with test pattern
+    double* data = (double*)mat.data;
+    for (int i = 0; i < mat.total(); ++i) {
+        data[i] = static_cast<double>(i * 0.5);
+    }
+    return mat;
+}
+
+// Get value from 3D mat
+float get_3d_value(const cv::Mat& mat, int i, int j, int k)
+{
+    // IMPORTANT: 3D arrays are a special case due to OpenCV's channel representation!
+    // After roundtrip through Python, a 3D NumPy array becomes a 2D OpenCV Mat with channels:
+    //   - mat.dims = 2 (not 3!)
+    //   - mat.rows = first dimension
+    //   - mat.cols = second dimension  
+    //   - mat.channels() = third dimension
+    //
+    // Fortunately, we can use mat.ptr<T>(i, j) which returns a pointer to row i, column j.
+    // Then [k] indexes into the k-th channel. Simple and clean!
+    
+    return mat.ptr<float>(i, j)[k];
+}
+
+// Set value in 3D mat
+void set_3d_value(cv::Mat& mat, int i, int j, int k, float value)
+{
+    // Same simple approach: ptr to (i,j), then index [k] for the channel
+    mat.ptr<float>(i, j)[k] = value;
+}
+
+// Get value from 4D mat
+float get_4d_value(const cv::Mat& mat, int i, int j, int k, int l)
+{
+    // 4D+ arrays are straightforward - they remain true multi-dimensional Mats!
+    // No channel confusion: mat.dims = 4, mat.channels() = 1
+    // We can use OpenCV's built-in mat.at<T>(int* idx) directly!
+    // This is MUCH simpler than 3D arrays (which require manual stride calculation)
+    
+    int idx[] = {i, j, k, l};
+    return mat.at<float>(idx);
+}
+
+// Set value in 4D mat
+void set_4d_value(cv::Mat& mat, int i, int j, int k, int l, float value)
+{
+    // Simple and straightforward for 4D+ arrays - just use mat.at()!
+    // No channel complications like with 3D arrays
+    
+    int idx[] = {i, j, k, l};
+    mat.at<float>(idx) = value;
+}
+
+// Get shape of multidimensional mat
+std::vector<int> get_mat_shape(const cv::Mat& mat)
+{
+    std::vector<int> shape;
+    if (mat.dims <= 2) {
+        shape.push_back(mat.rows);
+        shape.push_back(mat.cols);
+        if (mat.channels() > 1) {
+            shape.push_back(mat.channels());
+        }
+    } else {
+        for (int i = 0; i < mat.dims; ++i) {
+            shape.push_back(mat.size[i]);
+        }
+        if (mat.channels() > 1) {
+            shape.push_back(mat.channels());
+        }
+    }
+    return shape;
+}
+
+// Inspect multidimensional mat
+void inspect_multidim(const cv::Mat& mat)
+{
+    std::cout << "[C++] Multidimensional Mat:" << std::endl;
+    std::cout << "        dims: " << mat.dims << std::endl;
+    std::cout << "        channels: " << mat.channels() << std::endl;
+    std::cout << "        total elements: " << mat.total() << std::endl;
+    std::cout << "        type: " << cv::typeToString(mat.type()) << std::endl;
+    std::cout << "        shape: [";
+    for (int i = 0; i < mat.dims; ++i) {
+        std::cout << mat.size[i];
+        if (i < mat.dims - 1) std::cout << ", ";
+    }
+    std::cout << "]" << std::endl;
+    std::cout << "        step (bytes): [";
+    for (int i = 0; i < mat.dims; ++i) {
+        std::cout << mat.step[i];
+        if (i < mat.dims - 1) std::cout << ", ";
+    }
+    std::cout << "]" << std::endl;
+    std::cout << "        elemSize: " << mat.elemSize() << std::endl;
+    std::cout << "        elemSize1: " << mat.elemSize1() << std::endl;
+}
+
+
+// Debug function to inspect mat after conversion from Python
+void debug_3d_mat(const cv::Mat& mat)
+{
+    std::cout << "\n[C++] Debug 3D Mat after conversion from Python:" << std::endl;
+    std::cout << "  dims: " << mat.dims << std::endl;
+    std::cout << "  rows: " << mat.rows << std::endl;
+    std::cout << "  cols: " << mat.cols << std::endl;
+    
+    if (mat.dims > 0 && mat.size.p != nullptr) {
+        std::cout << "  size.p: [";
+        for (int i = 0; i < mat.dims; ++i) {
+            std::cout << mat.size.p[i];
+            if (i < mat.dims - 1) std::cout << ", ";
+        }
+        std::cout << "]" << std::endl;
+    }
+    
+    std::cout << "  step.p: [";
+    if (mat.step.p != nullptr) {
+        for (int i = 0; i < mat.dims; ++i) {
+            std::cout << mat.step.p[i];
+            if (i < mat.dims - 1) std::cout << ", ";
+        }
+    }
+    std::cout << "]" << std::endl;
+    
+    std::cout << "  elemSize: " << mat.elemSize() << std::endl;
+    std::cout << "  elemSize1: " << mat.elemSize1() << std::endl;
+}
 
 
 NB_MODULE(cvnp_nano_example, m)
@@ -208,6 +379,18 @@ NB_MODULE(cvnp_nano_example, m)
     m.def("short_lived_matx", ShortLivedMatx);
     m.def("short_lived_mat", ShortLivedMat);
     m.def("RoundTripMatx21d", RoundTripMatx21d);
+
+    // Multidimensional array functions
+    m.def("create_3d_mat", &create_3d_mat);
+    m.def("create_4d_mat", &create_4d_mat);
+    m.def("create_5d_mat", &create_5d_mat);
+    m.def("get_3d_value", &get_3d_value);
+    m.def("set_3d_value", &set_3d_value);
+    m.def("get_4d_value", &get_4d_value);
+    m.def("set_4d_value", &set_4d_value);
+    m.def("get_mat_shape", &get_mat_shape);
+    m.def("inspect_multidim", &inspect_multidim);
+    m.def("debug_3d_mat", &debug_3d_mat);
 
     m.def("print_types_synonyms", cvnp_nano::print_types_synonyms);
 }
