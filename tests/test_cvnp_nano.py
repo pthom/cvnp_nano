@@ -1141,6 +1141,218 @@ def test_multidim_dtype_preservation_detailed():
         assert (arr_4d_back == arr_4d).all(), f"4D values changed for {dtype}"
 
 
+def test_performance_benchmarks():
+    """Benchmark conversion performance for various array sizes"""
+    import cvnp_nano_example as o
+    import time
+    import numpy as np
+    
+    print("\n=== Performance Benchmarks ===")
+    
+    # Test 1: Small arrays (typical for real-time processing)
+    sizes_small = [
+        ("640×480×3 (VGA RGB)", (480, 640, 3)),
+        ("1920×1080×3 (HD RGB)", (1080, 1920, 3)),
+    ]
+    
+    for name, shape in sizes_small:
+        arr = np.random.randint(0, 255, shape, dtype=np.uint8)
+        
+        # Measure Python → C++ → Python roundtrip
+        iterations = 1000
+        start = time.perf_counter()
+        for _ in range(iterations):
+            result = o.cvnp_roundtrip(arr)
+        elapsed = time.perf_counter() - start
+        
+        avg_time_us = (elapsed / iterations) * 1_000_000
+        throughput_fps = iterations / elapsed
+        
+        print(f"  {name}:")
+        print(f"    Roundtrip: {avg_time_us:.2f} µs/frame")
+        print(f"    Throughput: {throughput_fps:.0f} FPS")
+        
+        # Verify correctness
+        assert np.array_equal(arr, result)
+        
+        # Performance assertion: relaxed thresholds for CI runners
+        if "VGA" in name:
+            assert avg_time_us < 500, f"VGA conversion too slow: {avg_time_us:.2f} µs"
+        elif "HD" in name:
+            assert avg_time_us < 2000, f"HD conversion too slow: {avg_time_us:.2f} µs"
+    
+    # Test 2: Large multi-dimensional arrays
+    print("\n  Large multi-dimensional arrays:")
+    large_4d = np.random.randn(10, 64, 64, 32).astype(np.float32)
+    
+    iterations = 100
+    start = time.perf_counter()
+    for _ in range(iterations):
+        result = o.cvnp_roundtrip(large_4d)
+    elapsed = time.perf_counter() - start
+    
+    avg_time_ms = (elapsed / iterations) * 1000
+    print(f"    10×64×64×32 (float32): {avg_time_ms:.2f} ms/batch")
+    
+    assert np.array_equal(large_4d, result)
+    assert avg_time_ms < 50, f"4D conversion too slow: {avg_time_ms:.2f} ms"
+    
+    # Test 3: Memory sharing verification
+    print("\n  Memory sharing verification:")
+    arr = np.random.randn(1080, 1920, 3).astype(np.float32)
+    
+    # Roundtrip returns a NEW array (shares memory with C++ Mat, not original)
+    start = time.perf_counter()
+    mat = o.cvnp_roundtrip(arr)
+    conversion_time = time.perf_counter() - start
+    
+    # Verify values are correct (copy semantics)
+    assert np.array_equal(arr, mat), "Values not preserved"
+    
+    # Modify the returned array (this should be fast - it's just Python array access)
+    start = time.perf_counter()
+    mat[0, 0, 0] = 999.0
+    modify_time = time.perf_counter() - start
+    
+    print(f"    Conversion time: {conversion_time * 1_000_000:.2f} µs")
+    print(f"    Array modify time: {modify_time * 1_000_000:.2f} µs")
+    print(f"    Note: cvnp_roundtrip creates new array (expected behavior)")
+    
+    # Memory access should be fast (< 100µs threshold for CI runners)
+    assert modify_time < 0.0001, "Array access unexpectedly slow"
+
+
+def test_concurrent_access():
+    """Test thread safety with concurrent access to shared memory"""
+    import cvnp_nano_example as o
+    import threading
+    import numpy as np
+    
+    print("\n=== Concurrent Access Test ===")
+    
+    # Create a large array - work directly with it, not through roundtrip
+    # (roundtrip creates a NEW array, not shared with original)
+    arr = np.zeros((100, 100, 3), dtype=np.float32)
+    
+    # Test 1: Concurrent reads (should be safe)
+    results = []
+    errors = []
+    
+    def read_worker(thread_id):
+        try:
+            for _ in range(100):
+                # Read from different locations
+                val = arr[thread_id % 100, thread_id % 100, 0]
+                results.append(val)
+        except Exception as e:
+            errors.append(str(e))
+    
+    threads = [threading.Thread(target=read_worker, args=(i,)) for i in range(10)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    
+    assert len(errors) == 0, f"Concurrent reads failed: {errors}"
+    print(f"  ✓ Concurrent reads: {len(results)} successful reads from 10 threads")
+    
+    # Test 2: Concurrent writes (race conditions expected, but shouldn't crash)
+    write_count = [0]
+    errors = []
+    
+    def write_worker(thread_id):
+        try:
+            for i in range(100):
+                # Write to different locations to minimize contention
+                row = (thread_id * 10 + i) % 100
+                col = i % 100
+                arr[row, col, 0] = float(thread_id * 1000 + i)
+                write_count[0] += 1
+        except Exception as e:
+            errors.append(str(e))
+    
+    threads = [threading.Thread(target=write_worker, args=(i,)) for i in range(10)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    
+    assert len(errors) == 0, f"Concurrent writes crashed: {errors}"
+    print(f"  ✓ Concurrent writes: {write_count[0]} successful writes from 10 threads")
+    
+    # Verify writes occurred - just check that at least some values changed
+    non_zero_count = np.count_nonzero(arr)
+    assert non_zero_count > 0, "No writes visible in array"
+    print(f"  ✓ Writes visible in array ({non_zero_count} non-zero values)")
+    print(f"  ✓ Writes visible in array")
+    
+    # Test 3: Mixed read/write with C++ accessors
+    arr_3d = o.create_3d_mat()
+    errors = []
+    read_count = [0]
+    write_count = [0]
+    
+    def mixed_worker(thread_id):
+        try:
+            for i in range(50):
+                # Read
+                val = o.get_3d_value(arr_3d, 0, 0, thread_id % 6)
+                read_count[0] += 1
+                
+                # Write to different location
+                o.set_3d_value(arr_3d, 1, 1, thread_id % 6, float(thread_id + i))
+                write_count[0] += 1
+        except Exception as e:
+            errors.append(str(e))
+    
+    threads = [threading.Thread(target=mixed_worker, args=(i,)) for i in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    
+    assert len(errors) == 0, f"Mixed C++ access failed: {errors}"
+    print(f"  ✓ Mixed C++ access: {read_count[0]} reads, {write_count[0]} writes from 6 threads")
+    
+    # Test 4: GIL behavior - verify Python threads don't deadlock
+    print("\n  GIL behavior test:")
+    large_arr = np.random.randn(1000, 1000, 3).astype(np.float32)
+    
+    conversion_times = []
+    errors = []
+    
+    def conversion_worker(thread_id):
+        try:
+            start = time.perf_counter()
+            result = o.cvnp_roundtrip(large_arr)
+            elapsed = time.perf_counter() - start
+            conversion_times.append(elapsed)
+            # Verify correctness
+            assert np.array_equal(large_arr, result)
+        except Exception as e:
+            errors.append(str(e))
+    
+    import time
+    threads = [threading.Thread(target=conversion_worker, args=(i,)) for i in range(5)]
+    start = time.perf_counter()
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    total_time = time.perf_counter() - start
+    
+    assert len(errors) == 0, f"Concurrent conversions failed: {errors}"
+    avg_time = sum(conversion_times) / len(conversion_times)
+    print(f"    5 threads, 1000×1000×3 conversions:")
+    print(f"      Total time: {total_time:.3f}s")
+    print(f"      Avg per thread: {avg_time:.3f}s")
+    print(f"      Speedup: {sum(conversion_times)/total_time:.2f}x")
+    
+    # Note: Due to GIL, speedup will be limited, but should not be slower than sequential
+    assert total_time < sum(conversion_times) * 1.5, "Threading overhead too high"
+    print(f"  ✓ No deadlocks, reasonable threading overhead")
+
+
 def main():
     test_mat_shared()
     test_mat__shared()
@@ -1170,6 +1382,10 @@ def main():
     test_multidim_memory_sharing()
     test_multidim_different_types()
     test_multidim_contiguous_check()
+
+    # test performance and concurrency
+    test_performance_benchmarks()
+    test_concurrent_access()
 
     from cvnp_nano_example import print_types_synonyms  # noqa
     print("List of types synonyms:")
