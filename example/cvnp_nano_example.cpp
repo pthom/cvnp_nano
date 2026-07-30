@@ -127,6 +127,52 @@ cv::Mat ShortLivedMat()
 }
 
 
+// The same short lived Mat as ShortLivedMat(), handed to Python through the containers and
+// casts that user code commonly uses. Each of them picks its own rv_policy (see below), so
+// they exercise different branches of the cv::Mat caster than a returned cv::Mat does.
+static cv::Mat MakeShortLivedMat()
+{
+    auto mat = cv::Mat(cv::Size(300, 200), CV_8UC4);
+    mat = cv::Scalar(12, 34, 56, 78);
+    return mat;
+}
+
+// list::append() casts with rv_policy::automatic_reference, and passes no cleanup_list
+nanobind::list ShortLivedMatInList()
+{
+    nanobind::list result;
+    result.append(MakeShortLivedMat());
+    return result;
+}
+
+// make_tuple() casts with rv_policy::automatic, and passes no cleanup_list
+nanobind::tuple ShortLivedMatInTuple()
+{
+    return nanobind::make_tuple(MakeShortLivedMat());
+}
+
+// dict item assignment casts with rv_policy::automatic_reference
+nanobind::dict ShortLivedMatInDict()
+{
+    nanobind::dict result;
+    result["mat"] = MakeShortLivedMat();
+    return result;
+}
+
+// nanobind::cast() defaults to rv_policy::automatic_reference
+nanobind::object ShortLivedMatCast()
+{
+    return nanobind::cast(MakeShortLivedMat());
+}
+
+// The std::vector caster forwards the policy of the returned value (rv_policy::automatic)
+// to each element
+std::vector<cv::Mat> ShortLivedMatVector()
+{
+    return { MakeShortLivedMat() };
+}
+
+
 cv::Matx33d make_eye()
 {
     return cv::Matx33d::eye();
@@ -378,6 +424,11 @@ NB_MODULE(cvnp_nano_example, m)
 
     m.def("short_lived_matx", ShortLivedMatx);
     m.def("short_lived_mat", ShortLivedMat);
+    m.def("short_lived_mat_in_list", ShortLivedMatInList);
+    m.def("short_lived_mat_in_tuple", ShortLivedMatInTuple);
+    m.def("short_lived_mat_in_dict", ShortLivedMatInDict);
+    m.def("short_lived_mat_cast", ShortLivedMatCast);
+    m.def("short_lived_mat_vector", ShortLivedMatVector);
     m.def("RoundTripMatx21d", RoundTripMatx21d);
 
     // Multidimensional array functions
