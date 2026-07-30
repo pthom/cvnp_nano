@@ -70,10 +70,14 @@ struct type_caster<cv::Mat>
         try
         {
             // Set default policies if automatic
-            if (policy == rv_policy::automatic)
+            // Note: automatic_reference must *not* be lowered to reference here.
+            // It is the policy used by nanobind::cast(), and hence by list::append(),
+            // dict assignment, etc. Those call sites pass a cv::Mat which is often a local
+            // variable, and they pass no cleanup_list either. Lowering the policy to
+            // reference would hand Python an ndarray without any owner, i.e. a view on
+            // memory that is freed as soon as the caller returns.
+            if (policy == rv_policy::automatic || policy == rv_policy::automatic_reference)
                 policy = rv_policy::copy;
-            else if (policy == rv_policy::automatic_reference)
-                policy = rv_policy::reference;
 
             // Exported ndarray
             ndarray<> a;

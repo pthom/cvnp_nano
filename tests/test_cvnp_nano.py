@@ -348,6 +348,67 @@ def test_short_lived_mat():
     assert (m[0, 0] == (12, 34, 56, 78)).all()
 
 
+def test_short_lived_mat_in_containers():
+    """
+    Same short lived cv::Mat as in test_short_lived_mat(), but handed to Python through the
+    containers and casts that user code commonly uses. Each of them picks its own rv_policy,
+    so each exercises a different branch of the cv::Mat caster:
+
+        list.append(mat)      -> rv_policy::automatic_reference, and no cleanup_list
+        make_tuple(mat)       -> rv_policy::automatic, and no cleanup_list
+        dict["mat"] = mat     -> rv_policy::automatic_reference
+        nanobind::cast(mat)   -> rv_policy::automatic_reference
+        std::vector<cv::Mat>  -> the element inherits the policy of the returned value
+
+    Whichever the path, the ndarray handed to Python must own its data: the cv::Mat it came
+    from is a local variable, destroyed before Python ever sees the result.
+
+    Every path is measured and printed as a summary table *before* anything is asserted, so
+    that running this test on its own tells you which paths are affected and which are not
+    (pytest shows the table under "Captured stdout" when the test fails).
+    """
+    from cvnp_nano_example import (  # type: ignore
+        short_lived_mat_in_list, short_lived_mat_in_tuple, short_lived_mat_in_dict,
+        short_lived_mat_cast, short_lived_mat_vector,
+    )
+
+    # (path, the rv_policy that path uses, the array it handed to Python)
+    paths = [
+        ("return cv::Mat", "automatic", short_lived_mat()),
+        ("list.append", "automatic_reference", short_lived_mat_in_list()[0]),
+        ("make_tuple", "automatic", short_lived_mat_in_tuple()[0]),
+        ('dict["mat"] =', "automatic_reference", short_lived_mat_in_dict()["mat"]),
+        ("nanobind::cast", "automatic_reference", short_lived_mat_cast()),
+        ("std::vector<cv::Mat>", "automatic", short_lived_mat_vector()[0]),
+    ]
+    # Reuse the freed memory, so that a dangling view reads overwritten bytes.
+    # Without this, comparing the values often succeeds by accident: freed memory is
+    # usually still intact, which is why such a bug shows up only intermittently.
+    junk = [np.full(4096, 7, dtype=np.uint8) for _ in range(64)]  # noqa: F841
+
+    print("\n    Short lived cv::Mat handed to Python: does the ndarray own its data?\n")
+    print(f"    {'path':22s} {'rv_policy':21s} {'OWNDATA':8s} {'values':8s} verdict")
+    print(f"    {'-' * 22} {'-' * 21} {'-' * 8} {'-' * 8} {'-' * 13}")
+    dangling = []
+    for path, policy, m in paths:
+        owns_data = bool(m.flags["OWNDATA"])
+        values_ok = bool((m[0, 0] == (12, 34, 56, 78)).all())
+        verdict = "safe" if owns_data else "DANGLING VIEW"
+        print(f"    {path:22s} {policy:21s} {str(owns_data):8s} "
+              f"{'ok' if values_ok else 'garbage':8s} {verdict}")
+        if not (owns_data and values_ok):
+            dangling.append(path)
+    print()
+
+    bad_shape = [path for path, _, m in paths if m.shape != (200, 300, 4)]
+    assert not bad_shape, f"unexpected shape for: {', '.join(bad_shape)}"
+
+    assert not dangling, (
+        f"{len(dangling)} of {len(paths)} paths hand Python a view on freed memory "
+        f"(see the table above): {', '.join(dangling)}"
+    )
+
+
 def test_empty_mat():
     m = np.zeros(shape=(0, 0, 3))
     m2 = cvnp_roundtrip(m)
@@ -1436,6 +1497,7 @@ def main():
     test_point()
     test_cvnp_round_trip()
     test_short_lived_mat()
+    test_short_lived_mat_in_containers()
     test_empty_mat()
 
     test_additional_ref()
